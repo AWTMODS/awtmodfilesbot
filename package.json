@@ -1,0 +1,20 @@
+{
+  "name": "telegram-audio-bot",
+  "version": "1.0.0",
+  "description": "A Telegram bot for trimming and combining audio files.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "telegram",
+    "audio",
+    "bot"
+  ],
+  "author": "Your Name",
+  "license": "ISC",
+  "dependencies": {
+    "fluent-ffmpeg": "^2.1.3",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
