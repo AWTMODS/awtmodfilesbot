@@ -2,7 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
 // Replace with your bot token
-const TOKEN = '7989937085:AAF8_i_0NKvf-iuxDMx3ywAbAjS6oh9l3S';
+const TOKEN = '7989937085:AAF8_i_0NKvf-iuxDMx3ywAbAjS6oh9l3Sg';
 
 // Create a new bot instance
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -129,64 +129,92 @@ bot.onText(/\/upgrade/, (msg) => {
 });
 
 // Handle messages with files or images
-bot.on('message', (msg) => {
-  const chatId = msg.chat.id;
+      bot.on('message', (msg) => {
+        const chatId = msg.chat.id;
 
-  // User details
-  const userId = msg.from.id;
-  const username = msg.from.username || 'N/A';
-  const firstName = msg.from.first_name || '';
-  const lastName = msg.from.last_name || '';
-  const fullName = `${firstName} ${lastName}`.trim();
+        // User details
+        const userId = msg.from.id;
+        const username = msg.from.username || 'N/A';
+        const firstName = msg.from.first_name || '';
+        const lastName = msg.from.last_name || '';
+        const fullName = `${firstName} ${lastName}`.trim();
 
-  // Generate user profile link
-  const profileLink = `[${fullName}](tg://user?id=${userId})`;
+        // Check if the sender is an admin
+        const adminUsername = 'artwebtech'; // Replace with the admin's Telegram username
+        const isAdmin = username === adminUsername;
 
-  if (msg.photo) {
-    // Get the largest photo (highest resolution)
-    const largestPhoto = msg.photo[msg.photo.length - 1];
-    console.log('Photo File ID:', largestPhoto.file_id);
+        if (msg.document) {
+          const fileId = msg.document.file_id;
+          let fileName = msg.document.file_name || 'unknown';
 
-    // Forward the photo to the admin group with user details
-    bot.sendMessage(
-      '@awtadmins',
-      `Photo received from:
-- **Name:** ${fullName}
-- **Username:** ${username}
-- **User ID:** ${userId}
+          // Process file name to remove everything after the underscore
+          const processedFileName = fileName.split('_')[0];
 
-[View Profile](${profileLink})`,
-      { parse_mode: 'Markdown' }
-    );
+          console.log('Document File ID:', fileId);
 
-    bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
-      console.error('Error forwarding photo:', error.message);
-    });
+          if (isAdmin) {
+            // Update the file database
+            fileDatabase[processedFileName] = fileId;
 
-    bot.sendMessage(chatId, 'Photo received and forwarded to admins. An admin will verify shortly.');
-  } else if (msg.document) {
-    console.log('Document File ID:', msg.document.file_id);
+            // Save the updated file database to JSON file
+            try {
+              fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
+              console.log(`File database updated: ${processedFileName} => ${fileId}`);
+              bot.sendMessage(chatId, `File database updated successfully!\n\n"${processedFileName}": "${fileId}"`);
+            } catch (error) {
+              console.error('Error saving file database:', error.message);
+              bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
+            }
+          } else {
+            // Forward the document to the admin group with user details
+            bot.sendMessage(
+              '@awtadmins',
+              `Document received from:
+        - **Name:** ${fullName}
+        - **Username:** ${username}
+        - **User ID:** ${userId}
 
-    // Forward the document to the admin group with user details
-    bot.sendMessage(
-      '@awtadmins',
-      `Document received from:
-- **Name:** ${fullName}
-- **Username:** ${username}
-- **User ID:** ${userId}
+        [View Profile](tg://user?id=${userId})`,
+              { parse_mode: 'Markdown' }
+            );
 
-[View Profile](${profileLink})`,
-      { parse_mode: 'Markdown' }
-    );
+            bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
+              console.error('Error forwarding document:', error.message);
+            });
 
-    bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
-      console.error('Error forwarding document:', error.message);
-    });
+            bot.sendMessage(chatId, 'Payment screenshot received. An admin will verify your payment shortly.');
+          }
+        } else if (msg.photo) {
+          const largestPhoto = msg.photo[msg.photo.length - 1];
+          const fileId = largestPhoto.file_id;
+          console.log('Photo File ID:', fileId);
 
-    bot.sendMessage(chatId, 'Payment screenshot received. An admin will verify your payment shortly.');
-  } else {
-    console.log('No relevant file detected.');
-  }
+          if (isAdmin) {
+            bot.sendMessage(chatId, `Here is the file ID in JSON format:\n\n"photo": "${fileId}"`);
+          } else {
+            bot.sendMessage(
+              '@awtadmins',
+              `Photo received from:
+        - **Name:** ${fullName}
+        - **Username:** ${username}
+        - **User ID:** ${userId}
+
+        [View Profile](tg://user?id=${userId})`,
+              { parse_mode: 'Markdown' }
+            );
+
+            bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
+              console.error('Error forwarding photo:', error.message);
+            });
+
+            bot.sendMessage(chatId, 'Photo received and forwarded to admins. An admin will verify shortly.');
+          }
+        } else {
+          console.log('No relevant file detected.');
+        }
+    
+
+
 });
 
 // Verify function for admins
