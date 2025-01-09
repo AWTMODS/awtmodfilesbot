@@ -1,3 +1,5 @@
+
+
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -78,29 +80,102 @@ bot.onText(/\/get (.+)/, (msg, match) => {
   }
 });
 
+// Load normal users database
+let normalUsers = {};
+try {
+  normalUsers = JSON.parse(fs.readFileSync('normalUsers.json', 'utf-8'));
+  console.log('Normal users loaded:', normalUsers);
+} catch (error) {
+  console.error('Error loading normal users:', error.message);
+}
+
 // /start command handler
 bot.onText(/\/start/, (msg) => {
-  const joinButtons = {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: 'Join AWT Bots', url: 'https://t.me/awt_bots' }],
-        [{ text: 'Join ArtWebTech WA', url: 'https://t.me/artwebtechwa' }],
-        [{ text: 'Join ArtWebTech Official', url: 'https://t.me/artwebtechofficial' }],
-        [{ text: 'I Have Joined', callback_data: 'joined' }],
-      ],
-    },
-  };
-  bot.sendMessage(
-    msg.chat.id,
-    `Welcome! To use this bot, please join the following channels and then click "I Have Joined":
-- AWT Bots: https://t.me/awt_bots
-- ArtWebTech WA: https://t.me/artwebtechwa
-- ArtWebTech Official: https://t.me/artwebtechofficial
+  const userId = msg.from.id;
+
+  // Check if the user has already joined
+  if (normalUsers[userId]) {
+    bot.sendMessage(
+      msg.chat.id,
+      'Welcome back! You can use /get <filename> to request files. For example: /get picsart'
+    );
+  } else {
+    // Send the join instructions with buttons
+    const joinButtons = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Join Channel', url: 'https://t.me/awt_bots' }],
+          [{ text: 'Join Channel', url: 'https://t.me/artwebtechofficial' }],
+          [{ text: 'I Have Joined', callback_data: 'joined' }],
+        ],
+      },
+    };
+    bot.sendMessage(
+      msg.chat.id,
+      `Welcome! To use this bot, please join the following channels and then click "I Have Joined":
 
 Once you've joined, you can use /get <filename> to request a file. For example: /get picsart`,
-    joinButtons
-  );
+      joinButtons
+    );
+  }
 });
+
+// Handle join confirmation
+bot.on('callback_query', (callbackQuery) => {
+  const msg = callbackQuery.message;
+  const userId = callbackQuery.from.id;
+  const username = callbackQuery.from.username || 'N/A';
+  const firstName = callbackQuery.from.first_name || '';
+  const lastName = callbackQuery.from.last_name || '';
+  const fullName = `${firstName} ${lastName}`.trim();
+
+  if (callbackQuery.data === 'joined') {
+    // Save user to normalUsers.json
+    if (!normalUsers[userId]) {
+      normalUsers[userId] = {
+        username,
+        fullName,
+        joinedDate: new Date().toISOString(),
+      };
+      fs.writeFileSync('normalUsers.json', JSON.stringify(normalUsers, null, 2));
+    }
+
+    // Notify the user
+    bot.sendMessage(msg.chat.id, 'Thank you for joining the channels! You can now use /get <filename> to request files.');
+
+    // Delete the join buttons
+    bot.editMessageReplyMarkup(
+      { inline_keyboard: [] },
+      { chat_id: msg.chat.id, message_id: msg.message_id }
+    ).catch((error) => {
+      console.error('Error removing reply_markup:', error.message);
+    });
+  }
+});
+
+// Admin view of normal users
+bot.onText(/\/viewusers/, (msg) => {
+  const chatId = msg.chat.id;
+
+  if (msg.chat.username === 'artwebtech') {
+    // Admin view: List users with links to profiles
+    const userList = Object.entries(normalUsers)
+      .map(
+        ([id, user]) =>
+          `- [${user.fullName}](tg://user?id=${id}) (@${user.username || 'N/A'})`
+      )
+      .join('\n');
+
+    bot.sendMessage(
+      chatId,
+      `Here is the list of normal users:\n\n${userList}`,
+      { parse_mode: 'Markdown' }
+    );
+  } else {
+    bot.sendMessage(chatId, 'You do not have permission to view this information.');
+  }
+});
+
 
 // Handle join confirmation
 bot.on('callback_query', (callbackQuery) => {
@@ -213,7 +288,7 @@ bot.onText(/\/upgrade/, (msg) => {
         } else {
           console.log('No relevant file detected.');
         }
-    
+
 
 
 });
