@@ -1,5 +1,3 @@
-
-
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -88,7 +86,6 @@ try {
 } catch (error) {
   console.error('Error loading normal users:', error.message);
 }
-
 // /start command handler
 bot.onText(/\/start/, (msg) => {
   const userId = msg.from.id;
@@ -104,8 +101,9 @@ bot.onText(/\/start/, (msg) => {
     const joinButtons = {
       reply_markup: {
         inline_keyboard: [
-          [{ text: 'Join Channel', url: 'https://t.me/awt_bots' }],
-          [{ text: 'Join Channel', url: 'https://t.me/artwebtechofficial' }],
+          [{ text: 'Join AWT Bots', url: 'https://t.me/awt_bots' }],
+          [{ text: 'Join ArtWebTech WA', url: 'https://t.me/artwebtechwa' }],
+          [{ text: 'Join ArtWebTech Official', url: 'https://t.me/artwebtechofficial' }],
           [{ text: 'I Have Joined', callback_data: 'joined' }],
         ],
       },
@@ -113,6 +111,9 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(
       msg.chat.id,
       `Welcome! To use this bot, please join the following channels and then click "I Have Joined":
+- AWT Bots: https://t.me/awt_bots
+- ArtWebTech WA: https://t.me/artwebtechwa
+- ArtWebTech Official: https://t.me/artwebtechofficial
 
 Once you've joined, you can use /get <filename> to request a file. For example: /get picsart`,
       joinButtons
@@ -176,7 +177,7 @@ bot.onText(/\/viewusers/, (msg) => {
   }
 });
 
-
+// Remaining code continues here...
 // Handle join confirmation
 bot.on('callback_query', (callbackQuery) => {
   const msg = callbackQuery.message;
@@ -187,6 +188,10 @@ bot.on('callback_query', (callbackQuery) => {
       msg.chat.id,
       'Please send 10 rupees to 9072428800@fam UPI and upload the screenshot of the payment.'
     );
+
+    // Send the QR code image
+    const qrCodeImagePath = './qr_code.jpg'; // Path to the QR code image file
+    bot.sendPhoto(msg.chat.id, qrCodeImagePath, { caption: 'Scan this QR code to make the payment.' });
   }
 });
 
@@ -204,95 +209,98 @@ bot.onText(/\/upgrade/, (msg) => {
 });
 
 // Handle messages with files or images
-      bot.on('message', (msg) => {
-        const chatId = msg.chat.id;
+bot.on('message', (msg) => {
+  const chatId = msg.chat.id;
 
-        // User details
-        const userId = msg.from.id;
-        const username = msg.from.username || 'N/A';
-        const firstName = msg.from.first_name || '';
-        const lastName = msg.from.last_name || '';
-        const fullName = `${firstName} ${lastName}`.trim();
+  // User details
+  const userId = msg.from.id;
+  const username = msg.from.username || 'N/A';
+  const firstName = msg.from.first_name || '';
+  const lastName = msg.from.last_name || '';
+  const fullName = `${firstName} ${lastName}`.trim();
 
-        // Check if the sender is an admin
-        const adminUsername = 'artwebtech'; // Replace with the admin's Telegram username
-        const isAdmin = username === adminUsername;
+  // Check if the sender is an admin
+  const adminUsername = 'artwebtech'; // Replace with the admin's Telegram username
+  const isAdmin = username === adminUsername;
 
-       if (msg.document) {
-  const fileId = msg.document.file_id;
-  let fileName = msg.document.file_name || 'unknown';
+      if (msg.document) {
+        const fileId = msg.document.file_id;
+        let fileName = msg.document.file_name || 'unknown';
 
-  // Convert the entire file name to lowercase without removing any part
-  const processedFileName = fileName.toLowerCase();
+        // Simplify the file name by ignoring everything after the first underscore
+        const processedFileName = fileName
+          .toLowerCase()
+          .split('_')[0] // Ignore everything after the first underscore
+          .replace(/\.[^/.]+$/, ''); // Remove the file extension
 
-  console.log('Document File ID:', fileId);
+        console.log('Processed File Name:', processedFileName);
+        console.log('Document File ID:', fileId);
 
-  if (isAdmin) {
-    // Update the file database with the processed file name
-    fileDatabase[processedFileName] = fileId;
+        if (isAdmin) {
+          // Update the file database with the processed file name
+          fileDatabase[processedFileName] = fileId;
 
-    // Save the updated file database to the JSON file
-    try {
-      fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
-      console.log(`File database updated: ${processedFileName} => ${fileId}`);
-      bot.sendMessage(chatId, `File database updated successfully!\n\n"${processedFileName}": "${fileId}"`);
-    } catch (error) {
-      console.error('Error saving file database:', error.message);
-      bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
-    }
-  } else {
-    // Forward the document to the admin group with user details
-    bot.sendMessage(
-      '@awtadmins',
-      `Document received from:
+          // Save the updated file database to the JSON file
+          try {
+            fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
+            console.log(`File database updated: ${processedFileName} => ${fileId}`);
+            bot.sendMessage(chatId, `File database updated successfully!\n\n"${processedFileName}": "${fileId}"`);
+          } catch (error) {
+            console.error('Error saving file database:', error.message);
+            bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
+          }
+        } else {
+          // Forward the document to the admin group with user details
+          bot.sendMessage(
+            '@awtadmins',
+            `Document received from:
+            - **Name:** ${fullName}
+            - **Username:** ${username}
+            - **User ID:** ${userId}
+
+            [View Profile](tg://user?id=${userId})`,
+            { parse_mode: 'Markdown' }
+          );
+
+          bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
+            console.error('Error forwarding document:', error.message);
+          });
+
+          bot.sendMessage(chatId, 'Payment screenshot received. An admin will verify your payment shortly.');
+        }
+      
+
+    
+
+  } else if (msg.photo) {
+    const largestPhoto = msg.photo[msg.photo.length - 1];
+    const fileId = largestPhoto.file_id;
+    console.log('Photo File ID:', fileId);
+
+    if (isAdmin) {
+      bot.sendMessage(chatId, `Here is the file ID in JSON format:\n\n"photo": "${fileId}"`);
+    } else {
+      bot.sendMessage(
+        '@awtadmins',
+        `Photo received from:
       - **Name:** ${fullName}
       - **Username:** ${username}
       - **User ID:** ${userId}
 
       [View Profile](tg://user?id=${userId})`,
-      { parse_mode: 'Markdown' }
-    );
+        { parse_mode: 'Markdown' }
+      );
 
-    bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
-      console.error('Error forwarding document:', error.message);
-    });
+      bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
+        console.error('Error forwarding photo:', error.message);
+      });
 
-    bot.sendMessage(chatId, 'Payment screenshot received. An admin will verify your payment shortly.');
+      bot.sendMessage(chatId, 'Photo received and forwarded to admins. An admin will verify shortly.');
+    }
+  } else {
+    console.log('No relevant file detected.');
   }
-}
- else if (msg.photo) {
-          const largestPhoto = msg.photo[msg.photo.length - 1];
-          const fileId = largestPhoto.file_id;
-          console.log('Photo File ID:', fileId);
-
-          if (isAdmin) {
-            bot.sendMessage(chatId, `Here is the file ID in JSON format:\n\n"photo": "${fileId}"`);
-          } else {
-            bot.sendMessage(
-              '@awtadmins',
-              `Photo received from:
-        - **Name:** ${fullName}
-        - **Username:** ${username}
-        - **User ID:** ${userId}
-
-        [View Profile](tg://user?id=${userId})`,
-              { parse_mode: 'Markdown' }
-            );
-
-            bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
-              console.error('Error forwarding photo:', error.message);
-            });
-
-            bot.sendMessage(chatId, 'Photo received and forwarded to admins. An admin will verify shortly.');
-          }
-        } else {
-          console.log('No relevant file detected.');
-        }
-
-
-
 });
-
 // Verify function for admins
 bot.onText(/\/verify (\d+)/, (msg, match) => {
   const chatId = msg.chat.id;
