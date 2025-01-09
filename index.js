@@ -65,7 +65,7 @@ bot.onText(/\/get (.+)/, (msg, match) => {
     if (dailyRequests[userId].count > 3) {
       bot.sendMessage(
         chatId,
-        `You have reached your daily limit of 1 file request. Upgrade to premium to request unlimited files! Use /upgrade to subscribe.`
+        `You have reached your daily limit of 3 file request. Upgrade to premium to request unlimited files! Use /upgrade to subscribe.`
       );
     } else {
       if (fileDatabase[requestedFile]) {
