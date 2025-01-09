@@ -143,48 +143,49 @@ bot.onText(/\/upgrade/, (msg) => {
         const adminUsername = 'artwebtech'; // Replace with the admin's Telegram username
         const isAdmin = username === adminUsername;
 
-        if (msg.document) {
-          const fileId = msg.document.file_id;
-          let fileName = msg.document.file_name || 'unknown';
+       if (msg.document) {
+  const fileId = msg.document.file_id;
+  let fileName = msg.document.file_name || 'unknown';
 
-          // Process file name to remove everything after the underscore
-          const processedFileName = fileName.split('_')[0];
+  // Convert the entire file name to lowercase without removing any part
+  const processedFileName = fileName.toLowerCase();
 
-          console.log('Document File ID:', fileId);
+  console.log('Document File ID:', fileId);
 
-          if (isAdmin) {
-            // Update the file database
-            fileDatabase[processedFileName] = fileId;
+  if (isAdmin) {
+    // Update the file database with the processed file name
+    fileDatabase[processedFileName] = fileId;
 
-            // Save the updated file database to JSON file
-            try {
-              fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
-              console.log(`File database updated: ${processedFileName} => ${fileId}`);
-              bot.sendMessage(chatId, `File database updated successfully!\n\n"${processedFileName}": "${fileId}"`);
-            } catch (error) {
-              console.error('Error saving file database:', error.message);
-              bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
-            }
-          } else {
-            // Forward the document to the admin group with user details
-            bot.sendMessage(
-              '@awtadmins',
-              `Document received from:
-        - **Name:** ${fullName}
-        - **Username:** ${username}
-        - **User ID:** ${userId}
+    // Save the updated file database to the JSON file
+    try {
+      fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
+      console.log(`File database updated: ${processedFileName} => ${fileId}`);
+      bot.sendMessage(chatId, `File database updated successfully!\n\n"${processedFileName}": "${fileId}"`);
+    } catch (error) {
+      console.error('Error saving file database:', error.message);
+      bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
+    }
+  } else {
+    // Forward the document to the admin group with user details
+    bot.sendMessage(
+      '@awtadmins',
+      `Document received from:
+      - **Name:** ${fullName}
+      - **Username:** ${username}
+      - **User ID:** ${userId}
 
-        [View Profile](tg://user?id=${userId})`,
-              { parse_mode: 'Markdown' }
-            );
+      [View Profile](tg://user?id=${userId})`,
+      { parse_mode: 'Markdown' }
+    );
 
-            bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
-              console.error('Error forwarding document:', error.message);
-            });
+    bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
+      console.error('Error forwarding document:', error.message);
+    });
 
-            bot.sendMessage(chatId, 'Payment screenshot received. An admin will verify your payment shortly.');
-          }
-        } else if (msg.photo) {
+    bot.sendMessage(chatId, 'Payment screenshot received. An admin will verify your payment shortly.');
+  }
+}
+ else if (msg.photo) {
           const largestPhoto = msg.photo[msg.photo.length - 1];
           const fileId = largestPhoto.file_id;
           console.log('Photo File ID:', fileId);
