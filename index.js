@@ -50,7 +50,7 @@ bot.onText(/\/get (.+)/, (msg, match) => {
     // Premium users can request unlimited files
     if (fileDatabase[requestedFile]) {
       const fileId = fileDatabase[requestedFile];
-      bot.sendDocument(chatId, fileId, { caption: `Here is your requested file: ${requestedFile}` });
+      bot.sendDocument(chatId, fileId, { caption: `Here is your requested file: ${requestedFile} \n Modded By @artwebtechofficial` });
     } else {
       bot.sendMessage(chatId, `Sorry, I couldn't find the file "${requestedFile}".`);
     }
