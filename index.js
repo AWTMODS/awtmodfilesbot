@@ -57,15 +57,15 @@ bot.onText(/\/get (.+)/, (msg, match) => {
   } else {
     // Non-premium users can request one file per day
     if (!dailyRequests[userId] || dailyRequests[userId].date !== currentDate) {
-      dailyRequests[userId] = { count: 1, date: currentDate };
+      dailyRequests[userId] = { count: 3, date: currentDate };
     } else {
-      dailyRequests[userId].count += 1;
+      dailyRequests[userId].count += 3;
     }
 
-    if (dailyRequests[userId].count > 1) {
+    if (dailyRequests[userId].count > 3) {
       bot.sendMessage(
         chatId,
-        `You have reached your daily limit of 1 file request. Upgrade to premium to request unlimited files! Use /upgrade to subscribe.`
+        `You have reached your daily limit of 3 file request. Upgrade to premium to request unlimited files! Use /upgrade to subscribe.`
       );
     } else {
       if (fileDatabase[requestedFile]) {
