@@ -198,15 +198,22 @@ bot.on('callback_query', (callbackQuery) => {
 // Command to request UPI payment
 bot.onText(/\/upgrade/, (msg) => {
   const chatId = msg.chat.id;
-  const paymentButton = {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: 'Pay 10 Rupees', callback_data: 'payment' }],
-      ],
-    },
-  };
-  bot.sendMessage(chatId, 'To upgrade to premium, please send 10 rupees to 9072428800@fam UPI.', paymentButton);
+  const userId = msg.from.id;
+
+  if (premiumUsers.includes(userId)) {
+    bot.sendMessage(chatId, 'You are already a premium member! Enjoy the premium features!');
+  } else {
+    const paymentButton = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'Pay 10 Rupees', callback_data: 'payment' }],
+        ],
+      },
+    };
+    bot.sendMessage(chatId, 'To upgrade to premium, please send 10 rupees to 9072428800@fam UPI.', paymentButton);
+  }
 });
+
 
 // Handle messages with files or images
 bot.on('message', (msg) => {
