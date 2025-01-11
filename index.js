@@ -358,8 +358,10 @@ bot.on('message', (msg) => {
         console.log(`File database updated: ${processedFileName} => ${fileId}`);
         bot.sendMessage(chatId, `File database updated successfully!\n\n"${processedFileName}": "${fileId}"`);
 
-        // Send the updated fileDatabase.json to the admin channel
-        bot.sendDocument('@awtadmins', 'fileDatabase.json');
+        // Send the updated fileDatabase.json to the admin channel with a caption that includes the last file ID and name
+        bot.sendDocument('@awtadmins', 'fileDatabase.json', {
+          caption: `Updated fileDatabase.json file:\nLast file added: "${processedFileName}" `,
+        });
       } catch (error) {
         console.error('Error saving file database:', error.message);
         bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
