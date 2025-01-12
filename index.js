@@ -3,6 +3,8 @@ const fs = require('fs');
 const TOKEN = '7989937085:AAF8_i_0NKvf-iuxDMx3ywAbAjS6oh9l3Sg'; // BOT_TOKEN
 const ADMIN_USERNAME = 'artwebtech'; // ADMIN_USERNAME
 const REQUIRED_CHANNEL = '@awt_bots'; // REQURIED_CHANNEL
+const adminUsers = ["1343548529",""];  // ADMINS  IDs
+const privateChannelId = -1002433715335; // PRIVATE_CHANNEL_ID
 
 // Create a new bot instance
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -134,42 +136,97 @@ const requireMembership = (handler) => async (msg, match) => {
 
 
 
+// Handle the /list command
+bot.onText(/\/list/, (msg) => {
+  const chatId = msg.chat.id;
+
+  // Load the file database
+  fs.readFile('fileDatabase.json', 'utf8', (err, data) => {
+    if (err) {
+      bot.sendMessage(chatId, 'Error reading the file database.');
+      console.error(err);
+      return;
+    }
+
+    try {
+      const fileDatabase = JSON.parse(data);
+      const files = fileDatabase.files;
+
+      if (files.length === 0) {
+        bot.sendMessage(chatId, 'No files available.');
+        return;
+      }
+
+      // Generate a message with easily copyable text commands
+      let message = 'Available Files:\n\n';
+      files.forEach((file, index) => {
+        message += `${index + 1}. ${file.appName}\n   Added Date: ${file.addedDate}\n   Use: \`/get ${file.appName}\`\n\n`;
+      });
+
+      // Send the message to the user
+      bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    } catch (parseErr) {
+      bot.sendMessage(chatId, 'Error parsing the file database.');
+      console.error(parseErr);
+    }
+  });
+});
+
 // Command to handle file requests
-bot.onText(/\/get (.+)/, requireMembership(async(msg, match) => {
+bot.onText(/\/get (.+)/, requireMembership(async (msg, match) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
   const requestedFile = match[1].trim().toLowerCase();
-  const currentDate = new Date().toISOString().split('T')[0];
 
-  if (premiumUsers.includes(String(userId))) {
-    // Premium users have unlimited access
-    if (fileDatabase[requestedFile]) {
-      const fileId = fileDatabase[requestedFile];
-      bot.sendDocument(chatId, fileId, { caption: `Here is your requested file: ${requestedFile} \n By @artwebtechofficial` });
-    } else {
-      bot.sendMessage(chatId, `Sorry, I couldn't find the file "${requestedFile}".`);
+  // Load the file database
+  fs.readFile('fileDatabase.json', 'utf8', (err, data) => {
+    if (err) {
+      bot.sendMessage(chatId, 'Error reading the file database.');
+      console.error(err);
+      return;
     }
-  } else {
-    // Non-premium users have daily limits
-    if (!dailyRequests[userId] || dailyRequests[userId].date !== currentDate) {
-      dailyRequests[userId] = { count: 1, date: currentDate };
-    } else {
-      dailyRequests[userId].count++;
-    }
-//THIS IS THE LIMIT FOR THE FILE FOR NORMAL USERS
-    if (dailyRequests[userId].count > 3) {
-      bot.sendMessage(chatId, `You have reached your daily limit. Upgrade to premium to access more files! Use /upgrade.`);
-    } else {
-      if (fileDatabase[requestedFile]) {
-        const fileId = fileDatabase[requestedFile];
-        bot.sendDocument(chatId, fileId, { caption: `Here is your requested file: ${requestedFile} \n By @artwebtechofficial` });
-      } else {
+
+    try {
+      const fileDatabase = JSON.parse(data);
+      const files = fileDatabase.files;
+
+      // Find the file by appName (case-insensitive search)
+      const file = files.find((f) => f.appName.toLowerCase() === requestedFile);
+
+      if (!file) {
         bot.sendMessage(chatId, `Sorry, I couldn't find the file "${requestedFile}".`);
+        return;
       }
-    }
-  }
-}));
 
+      const fileId = file.fileId;
+
+      // Check if the user is an admin or premium
+      if (adminUsers.includes(String(userId)) || premiumUsers.includes(String(userId))) {
+        // No limit for admins or premium users
+        bot.sendDocument(chatId, fileId, { caption: `Here is your requested file: ${file.appName} \n By @artwebtechofficial` });
+      } else {
+        // Non-premium users have daily limits
+        const currentDate = new Date().toISOString().split('T')[0];
+
+        if (!dailyRequests[userId] || dailyRequests[userId].date !== currentDate) {
+          dailyRequests[userId] = { count: 1, date: currentDate };
+        } else {
+          dailyRequests[userId].count++;
+        }
+
+        // Limit for normal users
+        if (dailyRequests[userId].count > 3) {
+          bot.sendMessage(chatId, `You have reached your daily limit. Upgrade to premium to access more files! Use /upgrade.`);
+        } else {
+          bot.sendDocument(chatId, fileId, { caption: `Here is your requested file: ${file.appName} \n By @artwebtechofficial` });
+        }
+      }
+    } catch (parseErr) {
+      bot.sendMessage(chatId, 'Error parsing the file database.');
+      console.error(parseErr);
+    }
+  });
+}));
 
 
 // Callback for "I Have Joined" button
@@ -319,7 +376,6 @@ bot.onText(/\/broadcast (.+)/, (msg, match) => {
 });
 
 
-
 // Handle messages with files or images
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
@@ -337,39 +393,86 @@ bot.on('message', (msg) => {
 
   if (msg.document) {
     const fileId = msg.document.file_id;
-    let fileName = msg.document.file_name || 'unknown';
+    let appName = msg.document.file_name || 'unknown';
 
-    // Simplify the file name by ignoring everything after the first underscore
-    const processedFileName = fileName
+    // Normalize appName
+    const processedAppName = appName
       .toLowerCase()
       .split('_')[0] // Ignore everything after the first underscore
       .replace(/\.[^/.]+$/, ''); // Remove the file extension
 
-    console.log('Processed File Name:', processedFileName);
-    console.log('Document File ID:', fileId);
-
     if (isAdmin) {
-      // Update the file database with the processed file name
-      fileDatabase[processedFileName] = fileId;
+      // Load the file database
+      fs.readFile('fileDatabase.json', 'utf8', (err, data) => {
+        if (err) {
+          bot.sendMessage(chatId, 'Error reading the file database.');
+          console.error(err);
+          return;
+        }
 
-      // Save the updated file database to the JSON file
-      try {
-        fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
-        console.log(`File database updated: ${processedFileName} => ${fileId}`);
-        bot.sendMessage(chatId, `File database updated successfully!\n\n"${processedFileName}": "${fileId}"`);
+        let fileDatabase;
+        try {
+          fileDatabase = JSON.parse(data);
+        } catch (parseErr) {
+          bot.sendMessage(chatId, 'Error parsing the file database.');
+          console.error(parseErr);
+          return;
+        }
 
-        // Send the updated fileDatabase.json to the admin channel with a caption that includes the last file ID and name
-        bot.sendDocument('@awtadmins', 'fileDatabase.json', {
-          caption: `Updated fileDatabase.json file:\nLast file added: "${processedFileName}" `,
-        });
-      } catch (error) {
-        console.error('Error saving file database:', error.message);
-        bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
-      }
+        // Get the current date
+        const addedDate = new Date().toISOString().split('T')[0];
+        const newFileEntry = {
+          appName: processedAppName,
+          fileId,
+          addedDate, // Always use the current date dynamically
+        };
+
+        // Check if the appName already exists in the database
+        const existingIndex = fileDatabase.files.findIndex(
+          (file) => file.appName === processedAppName
+        );
+
+        if (existingIndex !== -1) {
+          // Preserve the existing id and update the rest
+          const existingId = fileDatabase.files[existingIndex].id;
+          fileDatabase.files[existingIndex] = {
+            ...newFileEntry,
+            id: existingId, // Retain the existing id
+          };
+          bot.sendMessage(chatId, `Updated file entry for app: ${processedAppName}`);
+        } else {
+          // Assign a new id for the new entry
+          const newId = fileDatabase.files.length
+            ? Math.max(...fileDatabase.files.map((file) => file.id || 0)) + 1
+            : 1;
+          fileDatabase.files.push({
+            id: newId,
+            ...newFileEntry,
+          });
+          bot.sendMessage(chatId, `Added new file entry for app: ${processedAppName}`);
+        }
+
+
+        // Save the updated file database
+        try {
+          fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
+          console.log(`File database updated: ${processedAppName} => ${fileId}`);
+          bot.sendMessage(chatId, `File database updated successfully!`);
+
+          // Send updated database to the admin group
+          bot.sendDocument(privateChannelId, 'fileDatabase.json', {
+            caption: `Updated fileDatabase.json file:\nLast file added/updated: "${processedAppName}"`,
+          });
+        } catch (error) {
+          console.error('Error saving file database:', error.message);
+          bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
+        }
+      });
+
     } else {
-      // Forward the document to the admin group with user details
+      // Forward non-admin files to the admin group
       bot.sendMessage(
-        '@awtadmins',
+        privateChannelId, 
         `Document received from:
         - **Name:** ${fullName}
         - **Username:** ${username}
@@ -379,7 +482,7 @@ bot.on('message', (msg) => {
         { parse_mode: 'Markdown' }
       );
 
-      bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
+      bot.forwardMessage(privateChannelId,  chatId, msg.message_id).catch((error) => {
         console.error('Error forwarding document:', error.message);
       });
 
@@ -395,7 +498,7 @@ bot.on('message', (msg) => {
       bot.sendMessage(chatId, `Here is the file ID in JSON format:\n\n"${msg.photo ? 'photo' : 'video'}": "${fileId}"`);
     } else {
       bot.sendMessage(
-        '@awtadmins',
+        privateChannelId, 
         `${msg.photo ? 'Photo' : 'Video'} received from:
         - **Name:** ${fullName}
         - **Username:** ${username}
@@ -405,7 +508,7 @@ bot.on('message', (msg) => {
         { parse_mode: 'Markdown' }
       );
 
-      bot.forwardMessage('@awtadmins', chatId, msg.message_id).catch((error) => {
+      bot.forwardMessage(privateChannelId,  chatId, msg.message_id).catch((error) => {
         console.error('Error forwarding message:', error.message);
       });
 
@@ -508,7 +611,7 @@ bot.onText(/\/remove (.+)/, (msg, match) => {
       try {
         fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
         bot.sendMessage(chatId, `File "${fileName}" has been successfully removed from the database.`);
-        bot.sendDocument('@awtadmins', 'fileDatabase.json', {
+        bot.sendDocument(privateChannelId,  'fileDatabase.json', {
           caption: 'Updated fileDatabase.json after removal.',
         });
       } catch (error) {
@@ -522,9 +625,6 @@ bot.onText(/\/remove (.+)/, (msg, match) => {
     bot.sendMessage(chatId, 'You do not have permission to use this command.');
   }
 });
-
-
-
 
 // Graceful shutdown
 process.on('SIGINT', () => {
