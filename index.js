@@ -135,6 +135,20 @@ const requireMembership = (handler) => async (msg, match) => {
 };
 
 
+// Callback for "I Have Joined" button
+bot.on('callback_query', async (callbackQuery) => {
+  const userId = callbackQuery.from.id;
+
+  if (callbackQuery.data === 'check_membership') {
+    if (await checkMembership(userId)) {
+      bot.sendMessage(userId, 'Thank you for joining! You can now use the bot.');
+    } else {
+      bot.sendMessage(userId, 'It seems you haven’t joined yet. Please join the channel and try again.');
+    }
+  }
+});
+
+
 
 // Handle the /list command
 bot.onText(/\/list/, (msg) => {
@@ -229,20 +243,6 @@ bot.onText(/\/get (.+)/, requireMembership(async (msg, match) => {
 }));
 
 
-// Callback for "I Have Joined" button
-bot.on('callback_query', async (callbackQuery) => {
-  const userId = callbackQuery.from.id;
-
-  if (callbackQuery.data === 'check_membership') {
-    if (await checkMembership(userId)) {
-      bot.sendMessage(userId, 'Thank you for joining! You can now use the bot.');
-    } else {
-      bot.sendMessage(userId, 'It seems you haven’t joined yet. Please join the channel and try again.');
-    }
-  }
-});
-
-
 // viewpremiumusers command to show all premium users
 bot.onText(/\/viewpremiumusers/, (msg) => {
   const chatId = msg.chat.id;
@@ -305,25 +305,8 @@ bot.onText(/\/viewusers/, (msg) => {
     }
   });
 
-// Handle join confirmation
-bot.on('callback_query', (callbackQuery) => {
-  const msg = callbackQuery.message;
-  if (callbackQuery.data === 'joined') {
-    bot.sendMessage(msg.chat.id, 'Thank you for joining the channels! You can now use /get <filename> to request files.');
-  } else if (callbackQuery.data === 'payment') {
-    bot.sendMessage(
-      msg.chat.id,
-      'Please send 10 rupees to 9072428800@fam UPI and upload the screenshot of the payment.'
-    );
 
-    // Send the QR code image
-    const qrCodeImagePath = './qr_code.jpg'; // Path to the QR code image file
-    bot.sendPhoto(msg.chat.id, qrCodeImagePath, { caption: 'Scan this QR code to make the payment.' });
-  }
-});
-
-
-// Command to request UPI payment
+// Command to request UPI payment/premiumpay
 bot.onText(/\/upgrade/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
@@ -342,7 +325,29 @@ bot.onText(/\/upgrade/, (msg) => {
   }
 });
 
+bot.on('callback_query', (callbackQuery) => {
+  const msg = callbackQuery.message;
+  if (callbackQuery.data === 'joined') {
+    bot.sendMessage(
+      msg.chat.id,
+      'Thank you for joining the channels! You can now use /get <filename> to request files.'
+    );
+  } else if (callbackQuery.data === 'payment') {
+    const qrCodeImagePath = './qr_code.jpg';
 
+    // Check if the QR code image exists
+    if (fs.existsSync(qrCodeImagePath)) {
+      bot.sendPhoto(msg.chat.id, qrCodeImagePath, {
+        caption: 'Scan this QR code to make the payment.',
+      });
+    } else {
+      bot.sendMessage(
+        msg.chat.id,
+        'QR code not available. Please contact the admin for assistance.'
+      );
+    }
+  }
+});
 
 // Broadcast message to normal users only
 bot.onText(/\/broadcast (.+)/, (msg, match) => {
@@ -388,9 +393,29 @@ bot.on('message', (msg) => {
   const fullName = `${firstName} ${lastName}`.trim();
 
   // Check if the sender is an admin
-  const adminUsername = 'artwebtech'; // Replace with the admin's Telegram username
-  const isAdmin = username === adminUsername;
+  const isAdmin = username === ADMIN_USERNAME;
 
+  // Handle /data command for admin to retrieve database files
+  if (msg.text === '/data' && isAdmin) {
+    const filesToSend = ['fileDatabase.json', 'normalUsers.json', 'premiumUsers.json'];
+
+    filesToSend.forEach((file) => {
+      if (fs.existsSync(file)) {
+        bot.sendDocument(chatId, file, {
+          caption: `Here is the latest ${file}`,
+        }).catch((error) => {
+          console.error(`Error sending file ${file}:`, error.message);
+          bot.sendMessage(chatId, `Failed to send ${file}. Please try again later.`);
+        });
+      } else {
+        bot.sendMessage(chatId, `File ${file} not found.`);
+      }
+    });
+  } else if (msg.text === '/data') {
+    bot.sendMessage(chatId, 'You do not have permission to use this command.');
+  }
+
+  // Existing functionality (file handling, messages, etc.)
   if (msg.document) {
     const fileId = msg.document.file_id;
     let appName = msg.document.file_name || 'unknown';
@@ -452,7 +477,6 @@ bot.on('message', (msg) => {
           bot.sendMessage(chatId, `Added new file entry for app: ${processedAppName}`);
         }
 
-
         // Save the updated file database
         try {
           fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
@@ -482,7 +506,7 @@ bot.on('message', (msg) => {
         { parse_mode: 'Markdown' }
       );
 
-      bot.forwardMessage(privateChannelId,  chatId, msg.message_id).catch((error) => {
+      bot.forwardMessage(privateChannelId, chatId, msg.message_id).catch((error) => {
         console.error('Error forwarding document:', error.message);
       });
 
@@ -508,7 +532,7 @@ bot.on('message', (msg) => {
         { parse_mode: 'Markdown' }
       );
 
-      bot.forwardMessage(privateChannelId,  chatId, msg.message_id).catch((error) => {
+      bot.forwardMessage(privateChannelId, chatId, msg.message_id).catch((error) => {
         console.error('Error forwarding message:', error.message);
       });
 
