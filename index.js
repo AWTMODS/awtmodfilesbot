@@ -381,39 +381,97 @@ bot.onText(/\/broadcast (.+)/, (msg, match) => {
 });
 
 
-// Handle messages with files or images
-bot.on('message', (msg) => {
-  const chatId = msg.chat.id;
+// Function to broadcast messages to all users
+const broadcastMessage = (message) => {
+  // Read the users list from users.json
+  fs.readFile('users.json', 'utf8', (err, data) => {
+    if (err) {
+      console.error('Error reading users list:', err.message);
+      return;
+    }
 
-  // User details
-  const userId = msg.from.id;
-  const username = msg.from.username || 'N/A';
-  const firstName = msg.from.first_name || '';
-  const lastName = msg.from.last_name || '';
-  const fullName = `${firstName} ${lastName}`.trim();
+    let users;
+    try {
+      users = JSON.parse(data).users || [];
+    } catch (parseErr) {
+      console.error('Error parsing users list:', parseErr.message);
+      return;
+    }
 
-  // Check if the sender is an admin
-  const isAdmin = username === ADMIN_USERNAME;
-
-  // Handle /data command for admin to retrieve database files
-  if (msg.text === '/data' && isAdmin) {
-    const filesToSend = ['fileDatabase.json', 'normalUsers.json', 'premiumUsers.json'];
-
-    filesToSend.forEach((file) => {
-      if (fs.existsSync(file)) {
-        bot.sendDocument(chatId, file, {
-          caption: `Here is the latest ${file}`,
-        }).catch((error) => {
-          console.error(`Error sending file ${file}:`, error.message);
-          bot.sendMessage(chatId, `Failed to send ${file}. Please try again later.`);
-        });
-      } else {
-        bot.sendMessage(chatId, `File ${file} not found.`);
-      }
+    // Send message to each user
+    users.forEach((userId) => {
+      bot.sendMessage(userId, message).catch((error) => {
+        console.error(`Failed to send message to user ${userId}:`, error.message);
+      });
     });
-  } else if (msg.text === '/data') {
-    bot.sendMessage(chatId, 'You do not have permission to use this command.');
-  }
+  });
+};
+
+    // Bot message handler
+    bot.on('message', (msg) => {
+      const chatId = msg.chat.id;
+
+      // User details
+      const userId = msg.from.id;
+
+      // Check if the sender is an admin
+      const isAdmin = msg.from.username === ADMIN_USERNAME;
+
+      // Handle /start command and add users to users.json
+      if (msg.text === '/start') {
+        // Read existing users from users.json
+        fs.readFile('users.json', 'utf8', (err, data) => {
+          let users = [];
+          if (!err) {
+            try {
+              users = JSON.parse(data).users || [];
+            } catch (parseErr) {
+              console.error('Error parsing users.json:', parseErr.message);
+            }
+          }
+
+          if (!users.includes(userId)) {
+            // Add the new user ID to the array
+            users.push(userId);
+
+            // Write updated users.json
+            fs.writeFile('users.json', JSON.stringify({ users }, null, 2), (writeErr) => {
+              if (writeErr) {
+                console.error('Error saving users.json:', writeErr.message);
+              } else {
+                console.log(`Added new user ID: ${userId}`);
+
+                // Send the updated users.json file to the admin channel
+                bot.sendDocument(privateChannelId, 'users.json', {
+                  caption: `Updated users.json file:\nNew user added: ${userId}`,
+                }).catch((error) => {
+                  console.error('Error sending updated users.json to private channel:', error.message);
+                });
+              }
+            });
+          }
+        });
+      }
+
+      // Other existing bot functionality (e.g., /data, handling documents, etc.)
+      if (msg.text === '/data' && isAdmin) {
+        const filesToSend = ['fileDatabase.json', 'normalUsers.json', 'premiumUsers.json' , 'users.json'];
+
+        filesToSend.forEach((file) => {
+          if (fs.existsSync(file)) {
+            bot.sendDocument(chatId, file, {
+              caption: `Here is the latest ${file}`,
+            }).catch((error) => {
+              console.error(`Error sending file ${file}:`, error.message);
+              bot.sendMessage(chatId, `Failed to send ${file}. Please try again later.`);
+            });
+          } else {
+            bot.sendMessage(chatId, `File ${file} not found.`);
+          }
+        });
+      } else if (msg.text === '/data') {
+        bot.sendMessage(chatId, 'You do not have permission to use this command.');
+      }
 
   // Existing functionality (file handling, messages, etc.)
   if (msg.document) {
