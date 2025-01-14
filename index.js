@@ -100,7 +100,7 @@ bot.onText(/\/start/, (msg) => {
   // Welcome message
   bot.sendMessage(
     msg.chat.id,
-    'Welcome! You can use /get <filename> to request files. For example: /get picsart.'
+    'Welcome! You can find the available app list by /list ,You can use /get <filename> to request files. For example: /get picsart.'
   );
 });
 
