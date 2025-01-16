@@ -5,7 +5,9 @@ const ADMIN_USERNAME = 'artwebtech'; // ADMIN_USERNAME
 const REQUIRED_CHANNEL = '@awt_bots'; // REQURIED_CHANNEL
 const adminUsers = ["1343548529",""];  // ADMINS  IDs
 const privateChannelId = -1002433715335; // PRIVATE_CHANNEL_ID
-
+const RATE_LIMIT = 60000; // 1-minute rate limit
+const userRequests = {}; // To track user requests for rate limiting
+const requestLog = []; // To log all requests
 // Create a new bot instance
 const bot = new TelegramBot(TOKEN, { polling: true });
 
@@ -241,6 +243,142 @@ bot.onText(/\/get (.+)/, requireMembership(async (msg, match) => {
     }
   });
 }));
+
+
+
+// Listen for "/request" command
+bot.onText(/\/request$/, (msg) => {
+    const chatId = msg.chat.id;
+
+    // Prompt the user to provide an app name
+    bot.sendMessage(chatId, "Please specify the app name using `/request appname`.");
+});
+
+// Listen for "/request appname" commands
+bot.onText(/\/request (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const username = msg.from.username || "Anonymous";
+    const appName = match[1]?.trim();
+
+    // Check for empty app names
+    if (!appName) {
+        bot.sendMessage(chatId, "❌ Please provide a valid app name. Example: `/request MyApp`", {
+            parse_mode: 'Markdown',
+        });
+        return;
+    }
+
+    // Rate limiting
+    const now = Date.now();
+    if (userRequests[userId] && now - userRequests[userId] < RATE_LIMIT) {
+        bot.sendMessage(chatId, "⏳ Please wait before sending another request.");
+        return;
+    }
+    userRequests[userId] = now;
+
+    // Log the request
+    requestLog.push({ userId, username, appName, timestamp: now, status: "pending" });
+
+    // Message to send to admins
+    const messageToAdmins = `
+🔔 *New Request*
+- *User ID*: ${userId}
+- *App Name*: ${appName}
+- *From*: @${username}
+    `;
+
+    // Send message to the admin channel
+    bot.sendMessage(privateChannelId, messageToAdmins, { parse_mode: 'Markdown' })
+        .then(() => {
+            bot.sendMessage(chatId, "✅ Your request has been sent to the administrators. Thank you!");
+        })
+        .catch((error) => {
+            console.error("Error sending message to admins:", error.message);
+            bot.sendMessage(chatId, "❌ Failed to send your request. Please try again later.");
+        });
+});
+
+// Admin command: View all requests with /stats
+bot.onText(/\/stats/, (msg) => {
+    const chatId = msg.chat.id;
+
+    // Restrict this command to the admin channel
+    if (chatId !== privateChannelId) return;
+
+    if (requestLog.length === 0) {
+        bot.sendMessage(chatId, "📊 No requests have been made yet.");
+        return;
+    }
+
+    // Build stats message
+    let statsMessage = `📊 *All Requests*\n`;
+    requestLog.forEach((req, index) => {
+        statsMessage += `${index + 1}. *App Name*: ${req.appName}\n   *User*: @${req.username || "Anonymous"}\n   *Status*: ${req.status}\n`;
+    });
+
+    bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
+});
+
+// Admin command: Approve a request with /done
+bot.onText(/\/done (\d+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+
+    // Restrict this command to the admin channel
+    if (chatId !== privateChannelId) return;
+
+    const requestIndex = parseInt(match[1]) - 1; // Convert to zero-based index
+    if (requestIndex < 0 || requestIndex >= requestLog.length) {
+        bot.sendMessage(chatId, "❌ Invalid request number.");
+        return;
+    }
+
+    const request = requestLog[requestIndex];
+    request.status = "approved";
+
+    bot.sendMessage(chatId, `✅ Request for *${request.appName}* by @${request.username} has been approved.`, {
+        parse_mode: 'Markdown',
+    });
+});
+
+// Admin command: Reject a request with /undone
+bot.onText(/\/undone (\d+) (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+
+    // Restrict this command to the admin channel
+    if (chatId !== privateChannelId) return;
+
+    const requestIndex = parseInt(match[1]) - 1; // Convert to zero-based index
+    const reason = match[2]?.trim();
+
+    if (requestIndex < 0 || requestIndex >= requestLog.length) {
+        bot.sendMessage(chatId, "❌ Invalid request number.");
+        return;
+    }
+
+    if (!reason) {
+        bot.sendMessage(chatId, "❌ Please specify a reason for rejecting the request.");
+        return;
+    }
+
+    const request = requestLog[requestIndex];
+    request.status = "rejected";
+
+    bot.sendMessage(chatId, `❌ Request for *${request.appName}* by @${request.username} has been rejected.\nReason: ${reason}`, {
+        parse_mode: 'Markdown',
+    });
+});
+
+// Handle inline keyboard (remove if needed)
+bot.on('callback_query', (callbackQuery) => {
+    const data = callbackQuery.data;
+    const msg = callbackQuery.message;
+    const chatId = msg.chat.id;
+
+    bot.editMessageReplyMarkup(null, { chat_id: chatId, message_id: msg.message_id }).then(() => {
+        bot.sendMessage(chatId, "Please specify the app name using `/request appname`.");
+    });
+});
 
 
 // viewpremiumusers command to show all premium users
