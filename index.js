@@ -15,6 +15,7 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 let fileDatabase = {};
 let premiumUsers = [];
 let normalUsers = {};
+const REQUESTS_FILE = "requests.json";
 
 // Load JSON files safely
 function loadJsonFile(filePath, defaultValue = {}) {
@@ -245,13 +246,58 @@ bot.onText(/\/get (.+)/, requireMembership(async (msg, match) => {
 }));
 
 
+// Load requests from file
+function loadRequests() {
+    if (fs.existsSync(REQUESTS_FILE)) {
+        const data = fs.readFileSync(REQUESTS_FILE, "utf8");
+        return JSON.parse(data);
+    }
+    return [];
+}
 
+// Save requests to file
+function saveRequests() {
+    fs.writeFileSync(REQUESTS_FILE, JSON.stringify(requestLog, null, 2));
+}
 
-// Listen for "/request" command
+// Notify user about request status
+function notifyUser(request, status, reason = null) {
+    const message =
+        status === "approved"
+            ? `✅ Your request for *${request.appName}* has been approved!`
+            : `❌ Your request for *${request.appName}* was rejected.\n*Reason*: ${reason}`;
+    bot.sendMessage(request.userId, message, { parse_mode: "Markdown" }).catch((error) => {
+        console.error("Error notifying user:", error.message);
+    });
+}
+
+// Handle approval or rejection
+function handleRequestAction(requestId, status, reason = null) {
+    const requestIndex = requestLog.findIndex(req => req.requestId === requestId);
+    if (requestIndex === -1) {
+        return { success: false, message: "Request ID not found." };
+    }
+
+    const request = requestLog[requestIndex];
+    request.status = status;
+    if (reason) request.reason = reason;
+
+    // Notify the user
+    notifyUser(request, status, reason);
+
+    // Remove request from the log and save
+    requestLog.splice(requestIndex, 1);
+    saveRequests();
+
+    return { success: true, message: `Request #${requestId} has been ${status}.` };
+}
+
+// Initialize the request log from the file
+Object.assign(requestLog, loadRequests());
+
+// Listen for "/request" without parameters
 bot.onText(/\/request$/, (msg) => {
     const chatId = msg.chat.id;
-
-    // Prompt the user to provide an app name
     bot.sendMessage(chatId, "Please specify the app name using `/request appname`.");
 });
 
@@ -262,15 +308,13 @@ bot.onText(/\/request (.+)/, (msg, match) => {
     const username = msg.from.username || "Anonymous";
     const appName = match[1]?.trim();
 
-    // Check for empty app names
     if (!appName) {
         bot.sendMessage(chatId, "❌ Please provide a valid app name. Example: `/request MyApp`", {
-            parse_mode: 'Markdown',
+            parse_mode: "Markdown",
         });
         return;
     }
 
-    // Rate limiting
     const now = Date.now();
     if (userRequests[userId] && now - userRequests[userId] < RATE_LIMIT) {
         bot.sendMessage(chatId, "⏳ Please wait before sending another request.");
@@ -278,19 +322,28 @@ bot.onText(/\/request (.+)/, (msg, match) => {
     }
     userRequests[userId] = now;
 
-    // Log the request
-    requestLog.push({ userId, username, appName, timestamp: now, status: "pending" });
+    const requestId = requestLog.length + 1;
+    requestLog.push({
+        requestId,
+        userId,
+        username,
+        appName,
+        timestamp: now,
+        status: "pending",
+        reason: null,
+    });
 
-    // Message to send to admins
+    saveRequests();
+
     const messageToAdmins = `
 🔔 *New Request*
+- *Request ID*: ${requestId}
 - *User ID*: ${userId}
 - *App Name*: ${appName}
 - *From*: @${username}
     `;
 
-    // Send message to the admin channel
-    bot.sendMessage(privateChannelId, messageToAdmins, { parse_mode: 'Markdown' })
+    bot.sendMessage(privateChannelId, messageToAdmins, { parse_mode: "Markdown" })
         .then(() => {
             bot.sendMessage(chatId, "✅ Your request has been sent to the administrators. Thank you!");
         })
@@ -300,86 +353,66 @@ bot.onText(/\/request (.+)/, (msg, match) => {
         });
 });
 
-// Admin command: View all requests with /stats
-bot.onText(/\/stats/, (msg) => {
+// Listen for "/requeststatus" command
+bot.onText(/\/requeststatus$/, (msg) => {
     const chatId = msg.chat.id;
+    const userId = msg.from.id;
 
-    // Restrict this command to the admin channel
-    if (chatId !== privateChannelId) return;
+    const userRequestStatus = requestLog
+        .filter(request => request.userId === userId)
+        .map(request => `🔹 *App Name*: ${request.appName}\n   *Status*: ${request.status}\n   ${request.reason ? `*Reason*: ${request.reason}\n` : ""}   *Requested At*: ${new Date(request.timestamp).toLocaleString()}`)
+        .join("\n\n");
 
-    if (requestLog.length === 0) {
-        bot.sendMessage(chatId, "📊 No requests have been made yet.");
-        return;
+    if (!userRequestStatus) {
+        bot.sendMessage(chatId, "ℹ️ You have not made any requests yet.");
+    } else {
+        bot.sendMessage(chatId, `📄 *Your Request Statuses*:\n\n${userRequestStatus}`, { parse_mode: "Markdown" });
     }
-
-    // Build stats message
-    let statsMessage = `📊 *All Requests*\n`;
-    requestLog.forEach((req, index) => {
-        statsMessage += `${index + 1}. *App Name*: ${req.appName}\n   *User*: @${req.username || "Anonymous"}\n   *Status*: ${req.status}\n`;
-    });
-
-    bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
 });
 
-// Admin command: Approve a request with /done
-bot.onText(/\/done (\d+)/, (msg, match) => {
+// Admin command to list all pending requests
+bot.onText(/\/showrequests$/, (msg) => {
     const chatId = msg.chat.id;
-
-    // Restrict this command to the admin channel
-    if (chatId !== privateChannelId) return;
-
-    const requestIndex = parseInt(match[1]) - 1; // Convert to zero-based index
-    if (requestIndex < 0 || requestIndex >= requestLog.length) {
-        bot.sendMessage(chatId, "❌ Invalid request number.");
-        return;
+    if (chatId.toString() !== privateChannelId && msg.chat.type !== "private") {
+        return; // Ignore commands outside admin scope
     }
 
-    const request = requestLog[requestIndex];
-    request.status = "approved";
+    const pendingRequests = requestLog
+        .filter(request => request.status === "pending")
+        .map(request => `🔹 *Request ID*: ${request.requestId}\n   *App Name*: ${request.appName}\n   *From*: @${request.username || "Anonymous"}\n   *Requested At*: ${new Date(request.timestamp).toLocaleString()}`)
+        .join("\n\n");
 
-    bot.sendMessage(chatId, `✅ Request for *${request.appName}* by @${request.username} has been approved.`, {
-        parse_mode: 'Markdown',
-    });
+    if (!pendingRequests) {
+        bot.sendMessage(chatId, "ℹ️ There are no pending requests.");
+    } else {
+        bot.sendMessage(chatId, `📄 *Pending Requests*:\n\n${pendingRequests}`, { parse_mode: "Markdown" });
+    }
 });
 
-// Admin command: Reject a request with /undone
-bot.onText(/\/undone (\d+) (.+)/, (msg, match) => {
+// Handle admin approval (/done <ID>) or rejection (/undone <ID> <reason>)
+bot.onText(/\/(done|undone) (\d+)(?: (.+))?/, (msg, match) => {
     const chatId = msg.chat.id;
-
-    // Restrict this command to the admin channel
-    if (chatId !== privateChannelId) return;
-
-    const requestIndex = parseInt(match[1]) - 1; // Convert to zero-based index
-    const reason = match[2]?.trim();
-
-    if (requestIndex < 0 || requestIndex >= requestLog.length) {
-        bot.sendMessage(chatId, "❌ Invalid request number.");
-        return;
+    if (chatId.toString() !== privateChannelId && msg.chat.type !== "private") {
+        return; // Ignore commands outside admin scope
     }
 
-    if (!reason) {
-        bot.sendMessage(chatId, "❌ Please specify a reason for rejecting the request.");
-        return;
+    const action = match[1]; // "done" or "undone"
+    const requestId = parseInt(match[2], 10);
+    const reason = match[3]?.trim();
+
+    if (action === "done") {
+        const result = handleRequestAction(requestId, "approved");
+        bot.sendMessage(chatId, result.message);
+    } else if (action === "undone") {
+        if (!reason) {
+            bot.sendMessage(chatId, "❌ Please provide a reason for rejection. Example: `/undone 1 Invalid app name`");
+            return;
+        }
+        const result = handleRequestAction(requestId, "rejected", reason);
+        bot.sendMessage(chatId, result.message);
     }
-
-    const request = requestLog[requestIndex];
-    request.status = "rejected";
-
-    bot.sendMessage(chatId, `❌ Request for *${request.appName}* by @${request.username} has been rejected.\nReason: ${reason}`, {
-        parse_mode: 'Markdown',
-    });
 });
 
-// Handle inline keyboard (remove if needed)
-bot.on('callback_query', (callbackQuery) => {
-    const data = callbackQuery.data;
-    const msg = callbackQuery.message;
-    const chatId = msg.chat.id;
-
-    bot.editMessageReplyMarkup(null, { chat_id: chatId, message_id: msg.message_id }).then(() => {
-        bot.sendMessage(chatId, "Please specify the app name using `/request appname`.");
-    });
-});
 
 
 
@@ -595,7 +628,7 @@ const broadcastMessage = (message) => {
 
       // Other existing bot functionality (e.g., /data, handling documents, etc.)
       if (msg.text === '/data' && isAdmin) {
-        const filesToSend = ['fileDatabase.json', 'normalUsers.json', 'premiumUsers.json' , 'users.json'];
+        const filesToSend = ['fileDatabase.json', 'normalUsers.json', 'premiumUsers.json' , 'users.json', 'requests.json'];
 
         filesToSend.forEach((file) => {
           if (fs.existsSync(file)) {
