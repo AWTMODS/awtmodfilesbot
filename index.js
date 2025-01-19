@@ -581,54 +581,85 @@ const broadcastMessage = (message) => {
 };
 
     // Bot message handler
-    bot.on('message', (msg) => {
+ // Listen for messages
+  bot.on('message', (msg) => {
       const chatId = msg.chat.id;
-
-      // User details
       const userId = msg.from.id;
-
-      // Check if the sender is an admin
+      const username = msg.from.username || "Unknown";
+      const fullName = `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
       const isAdmin = msg.from.username === ADMIN_USERNAME;
 
-      // Handle /start command and add users to users.json
+      // Handle /start command and add users to users.json and normalUsers.json
       if (msg.text === '/start') {
-        // Read existing users from users.json
-        fs.readFile('users.json', 'utf8', (err, data) => {
-          let users = [];
-          if (!err) {
-            try {
-              users = JSON.parse(data).users || [];
-            } catch (parseErr) {
-              console.error('Error parsing users.json:', parseErr.message);
-            }
-          }
-
-          if (!users.includes(userId)) {
-            // Add the new user ID to the array
-            users.push(userId);
-
-            // Write updated users.json
-            fs.writeFile('users.json', JSON.stringify({ users }, null, 2), (writeErr) => {
-              if (writeErr) {
-                console.error('Error saving users.json:', writeErr.message);
-              } else {
-                console.log(`Added new user ID: ${userId}`);
-
-                // Send the updated users.json file to the admin channel
-                bot.sendDocument(privateChannelId, 'users.json', {
-                  caption: `Updated users.json file:\nNew user added: ${userId}`,
-                }).catch((error) => {
-                  console.error('Error sending updated users.json to private channel:', error.message);
-                });
+          // Update users.json
+          fs.readFile('users.json', 'utf8', (err, data) => {
+              let users = [];
+              if (!err) {
+                  try {
+                      users = JSON.parse(data).users || [];
+                  } catch (parseErr) {
+                      console.error('Error parsing users.json:', parseErr.message);
+                  }
               }
-            });
-          }
-        });
-      }
 
+              if (!users.includes(userId)) {
+                  users.push(userId);
+
+                  fs.writeFile('users.json', JSON.stringify({ users }, null, 2), (writeErr) => {
+                      if (writeErr) {
+                          console.error('Error saving users.json:', writeErr.message);
+                      } else {
+                          console.log(`Added new user ID: ${userId}`);
+
+                          bot.sendDocument(privateChannelId, 'users.json', {
+                              caption: `Updated users.json file:\nNew user added: ${userId}`,
+                          }).catch((error) => {
+                              console.error('Error sending updated users.json to private channel:', error.message);
+                          });
+                      }
+                  });
+              }
+          });
+
+          // Update normalUsers.json
+          fs.readFile('normalUsers.json', 'utf8', (err, data) => {
+              let normalUsers = {};
+              if (!err) {
+                  try {
+                      normalUsers = JSON.parse(data);
+                  } catch (parseErr) {
+                      console.error('Error parsing normalUsers.json:', parseErr.message);
+                  }
+              }
+
+              if (!normalUsers[userId]) {
+                  normalUsers[userId] = {
+                      username,
+                      fullName,
+                      joinedDate: new Date().toISOString(),
+                  };
+
+                  fs.writeFile('normalUsers.json', JSON.stringify(normalUsers, null, 2), (writeErr) => {
+                      if (writeErr) {
+                          console.error('Error saving normalUsers.json:', writeErr.message);
+                      } else {
+                          console.log(`Added new user details for ID: ${userId}`);
+
+                          bot.sendDocument(privateChannelId, 'normalUsers.json', {
+                              caption: `Updated normalUsers.json file:\nNew user added: ${username || "Unknown"} (ID: ${userId})`,
+                          }).catch((error) => {
+                              console.error('Error sending updated normalUsers.json to private channel:', error.message);
+                          });
+                      }
+                  });
+              }
+          });
+      }
+ 
+    
       // Other existing bot functionality (e.g., /data, handling documents, etc.)
       if (msg.text === '/data' && isAdmin) {
-        const filesToSend = ['fileDatabase.json', 'normalUsers.json', 'premiumUsers.json' , 'users.json', 'requests.json'];
+        const filesToSend = ['fileDatabase.json', 'normalUsers.json', 'premiumUsers.json','users.json', 'requests.json'];
 
         filesToSend.forEach((file) => {
           if (fs.existsSync(file)) {
@@ -645,7 +676,32 @@ const broadcastMessage = (message) => {
       } else if (msg.text === '/data') {
         bot.sendMessage(chatId, 'You do not have permission to use this command.');
       }
+   
 
+  // Handle /totalusers admin command
+      if (msg.text === '/totalusers' && isAdmin) {
+          fs.readFile('users.json', 'utf8', (err, data) => {
+              if (err) {
+                  console.error('Error reading users.json:', err.message);
+                  bot.sendMessage(chatId, '❌ Could not read users.json. Please try again later.');
+                  return;
+              }
+
+              let users = [];
+              try {
+                  users = JSON.parse(data).users || [];
+              } catch (parseErr) {
+                  console.error('Error parsing users.json:', parseErr.message);
+                  bot.sendMessage(chatId, '❌ Error parsing users.json. Please check the file format.');
+                  return;
+              }
+
+              bot.sendMessage(chatId, `📊 Total registered users: ${users.length}`);
+          });
+      }
+  
+
+  // Handle document uploads
   // Existing functionality (file handling, messages, etc.)
   if (msg.document) {
     const fileId = msg.document.file_id;
