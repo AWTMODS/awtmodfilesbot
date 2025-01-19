@@ -1,59 +1,96 @@
-# Telegram File Management Bot
+# Telegram Bot for App Management
 
-A Telegram bot designed for efficient file management. The bot provides various user and admin functionalities to manage, store, and retrieve files conveniently.
+This Telegram bot provides a variety of features for managing and interacting with applications, user requests, subscriptions, and more. It is equipped with both user and admin commands for seamless functionality.
+
+---
 
 ## Features
-- Upload and store files.
-- Retrieve files using unique identifiers.
-- User-friendly commands for seamless interaction.
-- Admin-specific controls for managing file databases.
+- **App Management**: View available apps, request new apps, and manage app data.
+- **User Management**: Handle premium subscriptions and verify users.
+- **Admin Controls**: Advanced administrative features for managing users, requests, and the overall system.
 
 ---
 
-## User Commands and Features
+## User Commands
 
-### 1. `/start`
-- **Description**: Initiates the bot and provides a welcome message with instructions on how to use the bot.
-- **Usage**: Simply type `/start` to begin interacting with the bot.
+### **1. `/get`**  
+- **Description**: Retrieve available apps.  
+- **Usage**: Type `/get` to view the list of available apps.  
 
-### 2. `/help`
-- **Description**: Displays a list of available commands and their descriptions.
-- **Usage**: Type `/help` to see the full command list.
+### **2. `/list`**  
+- **Description**: View the list of available apps.  
+- **Usage**: Type `/list` to see the full list of apps.  
 
-### 3. `/upload`
-- **Description**: Allows users to upload a file to the bot.
-- **Usage**: Send the file along with the `/upload` command.
+### **3. `/request`**  
+- **Description**: Request apps from the admin.  
+- **Usage**: Type `/request <app_name>` to submit your request for an app.  
 
-### 4. `/getfile <file_id>`
-- **Description**: Retrieves a file using its unique identifier.
-- **Usage**: Type `/getfile <file_id>` (replace `<file_id>` with the actual ID).
+### **4. `/requeststatus`**  
+- **Description**: Check the status of your request.  
+- **Usage**: Type `/requeststatus` to see whether your request has been approved or rejected.
 
-### 5. `/list`
-- **Description**: Displays a list of files uploaded by the user.
-- **Usage**: Type `/list` to view all your files.
-
----
-
-## Admin Commands and Features
-
-### 1. `/viewdatabase`
-- **Description**: Displays the current file database.
-- **Usage**: Type `/viewdatabase` to see all stored file records.
-
-### 2. `/removefile <file_id>`
-- **Description**: Deletes a specific file from the database using its unique identifier.
-- **Usage**: Type `/removefile <file_id>` (replace `<file_id>` with the actual ID).
-
-### 3. `/backup`
-- **Description**: Creates a backup of the file database.
-- **Usage**: Type `/backup` to generate and download a backup file.
-
-### 4. `/restore <file_path>`
-- **Description**: Restores the file database from a backup file.
-- **Usage**: Type `/restore <file_path>` (replace `<file_path>` with the actual path to the backup file).
+### **5. `/upgrade`**  
+- **Description**: Purchase a premium subscription.  
+- **Usage**: Type `/upgrade` to upgrade your account to premium.
 
 ---
-Developed By Aadith C V With 🤍
+
+## Admin Commands
+
+### **1. `/verify`**  
+- **Description**: Verify a user.  
+- **Usage**: Type `/verify <user_id>` to verify a user account.  
+- **Admin Only**
+
+### **2. `/remove`**  
+- **Description**: Remove an app from the database.  
+- **Usage**: Type `/remove <app_name>` to remove an app from the system.  
+- **Admin Only**
+
+### **3. `/broadcast`**  
+- **Description**: Send a broadcast message to all users.  
+- **Usage**: Type `/broadcast <message>` to send a message to all users.  
+- **Admin Only**
+
+### **4. `/totalusers`**  
+- **Description**: View the total number of users.  
+- **Usage**: Type `/totalusers` to get the current count of users.  
+- **Admin Only**
+
+### **5. `/removepremium`**  
+- **Description**: Remove a user from the premium list.  
+- **Usage**: Type `/removepremium <user_id>` to remove a user from the premium list.  
+- **Admin Only**
+
+### **6. `/viewpremiumusers`**  
+- **Description**: Display the list of premium users.  
+- **Usage**: Type `/viewpremiumusers` to see all users with a premium subscription.  
+- **Admin Only**
+
+### **7. `/viewusers`**  
+- **Description**: Display the list of normal users.  
+- **Usage**: Type `/viewusers` to see all users who are not premium.  
+- **Admin Only**
+
+### **8. `/showrequests`**  
+- **Description**: View all app requests made by users.  
+- **Usage**: Type `/showrequests` to view requests made by users for apps.  
+- **Admin Only**
+
+### **9. `/done`**  
+- **Description**: Approve a user's request.  
+- **Usage**: Type `/done <request_id>` to approve a request.  
+- **Admin Only**
+
+### **10. `/undone`**  
+- **Description**: Reject a user's request.  
+- **Usage**: Type `/undone <request_id>` to reject a request.  
+- **Admin Only**
+
+### **11. `/data`**  
+- **Description**: Retrieve the latest database from the server.  
+- **Usage**: Type `/data` to get the most recent version of the database.  
+- **Admin Only**
 
 ---
 
@@ -63,3 +100,7 @@ Feel free to fork the repository and submit pull requests. Any contributions to 
 ## License
 This project is licensed under the MIT License. See the `LICENSE` file for details.
 
+---
+
+### Developed By  
+**Aadith C V With 🤍**
