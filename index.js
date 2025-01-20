@@ -370,6 +370,68 @@ bot.onText(/\/requeststatus$/, (msg) => {
     }
 });
 
+
+
+
+
+// report bugs videos/images/links/texts
+bot.onText(/\/report/, async (msg) => {
+  const chatId = msg.chat.id;
+
+  bot.sendMessage(chatId, 'Please send the content you want to report (text, image, video, or link).');
+
+  // Await user input for reporting content
+  bot.once('message', async (message) => {
+    const userId = message.from.id;
+    const username = message.from.username || message.from.first_name || 'Unknown User';
+
+    try {
+      let forwardMessage = `📢 **New Report**\n👤 **From:** @${username} (ID: ${userId})\n\n`;
+
+      if (message.text) {
+        // Forward text messages
+        forwardMessage += `📝 **Text:**\n${message.text}`;
+        await bot.sendMessage(privateChannelId, forwardMessage, { parse_mode: 'Markdown' });
+      } else if (message.photo || message.video) {
+        // Ask for a caption for media
+        await bot.sendMessage(chatId, 'Would you like to add a caption? If yes, please send it now, or type /skip.');
+
+        bot.once('message', async (captionMessage) => {
+          let caption = captionMessage.text !== '/skip' ? captionMessage.text : '';
+          caption = `${forwardMessage}${caption ? `\n\n📝 **Caption:** ${caption}` : ''}`;
+
+          if (message.photo) {
+            const fileId = message.photo[message.photo.length - 1].file_id; // Get the highest resolution
+            await bot.sendPhoto(privateChannelId, fileId, { caption, parse_mode: 'Markdown' });
+          } else if (message.video) {
+            const fileId = message.video.file_id;
+            await bot.sendVideo(privateChannelId, fileId, { caption, parse_mode: 'Markdown' });
+          }
+
+          // Confirm to the user
+          await bot.sendMessage(chatId, 'Thank you! Your report has been sent.');
+        });
+      } else if (message.document) {
+        const fileId = message.document.file_id;
+        await bot.sendDocument(privateChannelId, fileId, { caption: forwardMessage });
+        await bot.sendMessage(chatId, 'Thank you! Your report has been sent.');
+      } else {
+        // Handle unsupported content
+        await bot.sendMessage(chatId, 'Unsupported content type. Please send text, photos, videos, or documents.');
+      }
+    } catch (error) {
+      console.error('Error forwarding the message:', error);
+      await bot.sendMessage(chatId, 'An error occurred while processing your report. Please try again later.');
+    }
+  });
+});
+
+
+
+
+
+
+
 // Admin command to list all pending requests
 bot.onText(/\/showrequests$/, (msg) => {
     const chatId = msg.chat.id;
