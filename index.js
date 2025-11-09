@@ -11,997 +11,724 @@ const requestLog = []; // To log all requests
 // Create a new bot instance
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// Initialize file database and premium users
-let fileDatabase = {};
-let premiumUsers = [];
-let normalUsers = {};
-const REQUESTS_FILE = "requests.json";
+/**
+ * Enhanced Telegram File Management Bot with Dynamic Features
+ * Features: Smart Categorization, Version Management, Advanced Search, and more
+ */
 
-// Load JSON files safely
-function loadJsonFile(filePath, defaultValue = {}) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch {
-    return defaultValue;
-  }
-}
+require('dotenv').config();
+const TelegramBot = require('node-telegram-bot-api');
+const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
 
-// Save JSON files safely
-function saveJsonFile(filePath, data) {
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-  } catch (error) {
-    console.error(`Error saving ${filePath}:`, error.message);
-  }
-}
+// ─────────────────────────────────────────────
+// ENV VARIABLES & CONFIGURATION
+// ─────────────────────────────────────────────
+const TOKEN = process.env.BOT_TOKEN;
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').filter(id => id.trim());
+const MONGODB_URI = process.env.MONGO_URI;
 
-// Load databases
-fileDatabase = loadJsonFile('fileDatabase.json');
-premiumUsers = Object.keys(loadJsonFile('premiumUsers.json'));
-normalUsers = loadJsonFile('normalUsers.json');
-
-// Ensure admin is a premium user
-function ensureAdminIsPremium() {
-  const adminId = Object.keys(normalUsers).find(
-    (id) => normalUsers[id]?.username === ADMIN_USERNAME
-  );
-  if (adminId && !premiumUsers.includes(adminId)) {
-    premiumUsers.push(adminId);
-    saveJsonFile('premiumUsers.json', {
-      ...loadJsonFile('premiumUsers.json'),
-      [adminId]: {
-        ...normalUsers[adminId],
-        premiumJoinedDate: new Date().toISOString(),
-      },
-    });
-  }
-}
-ensureAdminIsPremium();
-
-// Helper function to reset daily requests
-const dailyRequests = {};
-setInterval(() => {
-  const currentDate = new Date().toISOString().split('T')[0];
-  for (const userId in dailyRequests) {
-    if (dailyRequests[userId].date !== currentDate) {
-      delete dailyRequests[userId];
-    }
-  }
-}, 60 * 60 * 1000); // Every hour
-
-
-// /start command handler
-bot.onText(/\/start/, (msg) => {
-  const userId = msg.from.id;
-  const username = msg.from.username || 'N/A'; // Username may not always be available
-  const firstName = msg.from.first_name || '';
-  const lastName = msg.from.last_name || '';
-  const fullName = `${firstName} ${lastName}`.trim();
-
-  // Add user details to normalUsers.json if not already present
-  if (!normalUsers[userId]) {
-    normalUsers[userId] = {
-      username,
-      fullName,
-      joinedDate: new Date().toISOString(),
-    };
-
-    // Save the updated normalUsers to the JSON file
-    try {
-      fs.writeFileSync('normalUsers.json', JSON.stringify(normalUsers, null, 2));
-      console.log(`User ${userId} added to normalUsers.json.`);
-
-      // Send updated normalUsers.json file to admin
-      bot.sendDocument('@awtadmins', 'normalUsers.json', {
-        caption: 'Updated normalUsers.json file:',
-      });
-    } catch (error) {
-      console.error('Error saving to normalUsers.json:', error.message);
-    }
-  }
-
-  // Welcome message
-  bot.sendMessage(
-    msg.chat.id,
-    'Welcome! You can find the available app list by /list ,You can use /get <filename> to request files. For example: /get picsart.'
-  );
-});
-
-// CHECKING MEMBERSHIP
-const checkMembership = async (userId) => {
-  try {
-    const chatMember = await bot.getChatMember(REQUIRED_CHANNEL, userId);
-    return ['member', 'administrator', 'creator'].includes(chatMember.status);
-  } catch (error) {
-    console.error('Error checking membership:', error.message);
-    return false; // Assume not a member if there's an error
-  }
+// Feature flags
+const FEATURES = {
+  CATEGORIZATION: true,
+  VERSION_MANAGEMENT: true,
+  ADVANCED_SEARCH: true,
+  UPDATE_NOTIFICATIONS: true,
+  WISHLIST: true,
+  FILE_VERIFICATION: true,
+  ADMIN_CONTROLS: true,
+  DASHBOARD_REPORTS: true,
+  USER_PROFILES: true,
+  AUTO_FETCH: true,
+  SHARING_REFERRALS: true,
+  BATCH_OPERATIONS: true,
+  FILE_RELATIONSHIPS: true,
+  INTERACTIVE_TUTORIAL: true,
+  CUSTOMIZABLE_INTERFACE: true,
+  MULTI_LANGUAGE: true,
+  POINTS_REWARDS: true,
+  PREMIUM_FEATURES: true,
+  AFFILIATE_SYSTEM: true,
+  SMART_RECOMMENDATIONS: true,
+  AUTO_TAGGING: true,
+  ADVANCED_SEARCH_ENGINE: true,
+  COMMUNITY_FEATURES: true
 };
-//MUST REQUIRED TO JOIN THE CHANNEL
-const requireMembership = (handler) => async (msg, match) => {
-  const userId = msg.from.id;
 
-  if (await checkMembership(userId)) {
-    return handler(msg, match); // Proceed to the intended command handler
-  } else {
-    bot.sendMessage(userId, 'You need to join our Telegram channel to use this bot:', {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: 'Join Channel', url: `https://t.me/${REQUIRED_CHANNEL.replace('@', '')}` },
-            { text: 'I Have Joined', callback_data: 'check_membership' },
-          ],
-        ],
-      },
-    });
+// ─────────────────────────────────────────────
+// MULTI-LANGUAGE SUPPORT
+// ─────────────────────────────────────────────
+const translations = {
+  en: {
+    welcome: "👋 Welcome *{name}*!",
+    features: "🚀 *Available Features*",
+    selectFeature: "Select a feature to explore:",
+    back: "⬅️ Back",
+    mainMenu: "🏠 Main Menu",
+    adminPanel: "🛠 Admin Panel",
+    // Add more translations as needed
+  },
+  es: {
+    welcome: "👋 ¡Bienvenido *{name}*!",
+    features: "🚀 *Características Disponibles*",
+    selectFeature: "Selecciona una característica para explorar:",
+    back: "⬅️ Atrás",
+    mainMenu: "🏠 Menú Principal",
+    adminPanel: "🛠 Panel Admin",
   }
 };
 
-
-// Callback for "I Have Joined" button
-bot.on('callback_query', async (callbackQuery) => {
-  const userId = callbackQuery.from.id;
-
-  if (callbackQuery.data === 'check_membership') {
-    if (await checkMembership(userId)) {
-      bot.sendMessage(userId, 'Thank you for joining! You can now use the bot.');
-    } else {
-      bot.sendMessage(userId, 'It seems you haven’t joined yet. Please join the channel and try again.');
-    }
-  }
+// ─────────────────────────────────────────────
+// ENHANCED SCHEMAS
+// ─────────────────────────────────────────────
+const CategorySchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  description: String,
+  icon: String,
+  createdAt: { type: Date, default: Date.now }
 });
 
+const FileSchema = new mongoose.Schema({
+  appName: { type: String, required: true, index: true },
+  displayName: { type: String, required: true },
+  version: { type: String, default: '1.0.0' },
+  fileId: { type: String, required: true },
+  fileSize: { type: Number, required: true },
+  fileType: { type: String, default: 'document' },
+  mimeType: String,
+  description: String,
+  categories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category' }],
+  tags: [String],
+  isActive: { type: Boolean, default: true },
+  isVerified: { type: Boolean, default: false },
+  verificationHash: String,
+  downloadCount: { type: Number, default: 0 },
+  rating: { type: Number, default: 0 },
+  reviewCount: { type: Number, default: 0 },
+  dependencies: [String],
+  alternatives: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }],
+  isLatest: { type: Boolean, default: true },
+  previousVersion: { type: mongoose.Schema.Types.ObjectId, ref: 'File' },
+  addedDate: { type: Date, default: Date.now, index: true },
+  sourceChannel: String,
+  uploader: { type: String, default: 'admin' },
+  metadata: mongoose.Schema.Types.Mixed
+}, { timestamps: true });
 
-
-// Handle the /list command
-bot.onText(/\/list/, (msg) => {
-  const chatId = msg.chat.id;
-
-  // Load the file database
-  fs.readFile('fileDatabase.json', 'utf8', (err, data) => {
-    if (err) {
-      bot.sendMessage(chatId, 'Error reading the file database.');
-      console.error(err);
-      return;
-    }
-
-    try {
-      const fileDatabase = JSON.parse(data);
-      const files = fileDatabase.files;
-
-      if (files.length === 0) {
-        bot.sendMessage(chatId, 'No files available.');
-        return;
-      }
-
-      // Generate a message with easily copyable text commands
-      let message = 'Available Files:\n\n';
-      files.forEach((file, index) => {
-        message += `${index + 1}. ${file.appName}\n   Added Date: ${file.addedDate}\n   Use: \`/get ${file.appName}\`\n\n`;
-      });
-
-      // Send the message to the user
-      bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    } catch (parseErr) {
-      bot.sendMessage(chatId, 'Error parsing the file database.');
-      console.error(parseErr);
-    }
-  });
+const UserSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true, index: true },
+  username: String,
+  fullName: String,
+  language: { type: String, default: 'en' },
+  theme: { type: String, default: 'light' },
+  isPremium: { type: Boolean, default: false },
+  points: { type: Number, default: 0 },
+  level: { type: Number, default: 1 },
+  achievements: [String],
+  favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }],
+  wishlist: [String],
+  subscriptions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }],
+  downloadHistory: [{
+    fileId: { type: mongoose.Schema.Types.ObjectId, ref: 'File' },
+    downloadedAt: { type: Date, default: Date.now }
+  }],
+  referralCode: { type: String, unique: true },
+  referredBy: String,
+  referralCount: { type: Number, default: 0 },
+  totalDownloads: { type: Number, default: 0 },
+  joinedAt: { type: Date, default: Date.now },
+  lastActive: { type: Date, default: Date.now },
+  settings: mongoose.Schema.Types.Mixed
 });
 
-// Command to handle file requests
-bot.onText(/\/get (.+)/, requireMembership(async (msg, match) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-  const requestedFile = match[1].trim().toLowerCase();
-
-  // Load the file database
-  fs.readFile('fileDatabase.json', 'utf8', (err, data) => {
-    if (err) {
-      bot.sendMessage(chatId, 'Error reading the file database.');
-      console.error(err);
-      return;
-    }
-
-    try {
-      const fileDatabase = JSON.parse(data);
-      const files = fileDatabase.files;
-
-      // Find the file by appName (case-insensitive search)
-      const file = files.find((f) => f.appName.toLowerCase() === requestedFile);
-
-      if (!file) {
-        bot.sendMessage(chatId, `Sorry, I couldn't find the file "${requestedFile}".`);
-        return;
-      }
-
-      const fileId = file.fileId;
-
-      // Check if the user is an admin or premium
-      if (adminUsers.includes(String(userId)) || premiumUsers.includes(String(userId))) {
-        // No limit for admins or premium users
-        bot.sendDocument(chatId, fileId, { caption: `Here is your requested file: ${file.appName} \n By @artwebtechofficial` });
-      } else {
-        // Non-premium users have daily limits
-        const currentDate = new Date().toISOString().split('T')[0];
-
-        if (!dailyRequests[userId] || dailyRequests[userId].date !== currentDate) {
-          dailyRequests[userId] = { count: 1, date: currentDate };
-        } else {
-          dailyRequests[userId].count++;
-        }
-
-        // Limit for normal users
-        if (dailyRequests[userId].count > 3) {
-          bot.sendMessage(chatId, `You have reached your daily limit. Upgrade to premium to access more files! Use /upgrade.`);
-        } else {
-          bot.sendDocument(chatId, fileId, { caption: `Here is your requested file: ${file.appName} \n By @artwebtechofficial` });
-        }
-      }
-    } catch (parseErr) {
-      bot.sendMessage(chatId, 'Error parsing the file database.');
-      console.error(parseErr);
-    }
-  });
-}));
-
-
-// Load requests from file
-function loadRequests() {
-    if (fs.existsSync(REQUESTS_FILE)) {
-        const data = fs.readFileSync(REQUESTS_FILE, "utf8");
-        return JSON.parse(data);
-    }
-    return [];
-}
-
-// Save requests to file
-function saveRequests() {
-    fs.writeFileSync(REQUESTS_FILE, JSON.stringify(requestLog, null, 2));
-}
-
-// Notify user about request status
-function notifyUser(request, status, reason = null) {
-    const message =
-        status === "approved"
-            ? `✅ Your request for *${request.appName}* has been approved!`
-            : `❌ Your request for *${request.appName}* was rejected.\n*Reason*: ${reason}`;
-    bot.sendMessage(request.userId, message, { parse_mode: "Markdown" }).catch((error) => {
-        console.error("Error notifying user:", error.message);
-    });
-}
-
-// Handle approval or rejection
-function handleRequestAction(requestId, status, reason = null) {
-    const requestIndex = requestLog.findIndex(req => req.requestId === requestId);
-    if (requestIndex === -1) {
-        return { success: false, message: "Request ID not found." };
-    }
-
-    const request = requestLog[requestIndex];
-    request.status = status;
-    if (reason) request.reason = reason;
-
-    // Notify the user
-    notifyUser(request, status, reason);
-
-    // Remove request from the log and save
-    requestLog.splice(requestIndex, 1);
-    saveRequests();
-
-    return { success: true, message: `Request #${requestId} has been ${status}.` };
-}
-
-// Initialize the request log from the file
-Object.assign(requestLog, loadRequests());
-
-// Listen for "/request" without parameters
-bot.onText(/\/request$/, (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "Please specify the app name using `/request appname`.");
+const VersionHistorySchema = new mongoose.Schema({
+  fileId: { type: mongoose.Schema.Types.ObjectId, ref: 'File', required: true },
+  version: { type: String, required: true },
+  fileId: String,
+  fileSize: Number,
+  changes: String,
+  addedDate: { type: Date, default: Date.now },
+  isActive: { type: Boolean, default: false }
 });
 
-// Listen for "/request appname" commands
-bot.onText(/\/request (.+)/, (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const username = msg.from.username || "Anonymous";
-    const appName = match[1]?.trim();
-
-    if (!appName) {
-        bot.sendMessage(chatId, "❌ Please provide a valid app name. Example: `/request MyApp`", {
-            parse_mode: "Markdown",
-        });
-        return;
-    }
-
-    const now = Date.now();
-    if (userRequests[userId] && now - userRequests[userId] < RATE_LIMIT) {
-        bot.sendMessage(chatId, "⏳ Please wait before sending another request.");
-        return;
-    }
-    userRequests[userId] = now;
-
-    const requestId = requestLog.length + 1;
-    requestLog.push({
-        requestId,
-        userId,
-        username,
-        appName,
-        timestamp: now,
-        status: "pending",
-        reason: null,
-    });
-
-    saveRequests();
-
-    const messageToAdmins = `
-🔔 *New Request*
-- *Request ID*: ${requestId}
-- *User ID*: ${userId}
-- *App Name*: ${appName}
-- *From*: @${username}
-    `;
-
-    bot.sendMessage(privateChannelId, messageToAdmins, { parse_mode: "Markdown" })
-        .then(() => {
-            bot.sendMessage(chatId, "✅ Your request has been sent to the administrators. Thank you!");
-        })
-        .catch((error) => {
-            console.error("Error sending message to admins:", error.message);
-            bot.sendMessage(chatId, "❌ Failed to send your request. Please try again later.");
-        });
+const WishlistSchema = new mongoose.Schema({
+  appName: { type: String, required: true },
+  requestedBy: { type: String, required: true },
+  requestCount: { type: Number, default: 1 },
+  voters: [String],
+  createdAt: { type: Date, default: Date.now },
+  fulfilled: { type: Boolean, default: false },
+  fulfilledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'File' }
 });
 
-// Listen for "/requeststatus" command
-bot.onText(/\/requeststatus$/, (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-
-    const userRequestStatus = requestLog
-        .filter(request => request.userId === userId)
-        .map(request => `🔹 *App Name*: ${request.appName}\n   *Status*: ${request.status}\n   ${request.reason ? `*Reason*: ${request.reason}\n` : ""}   *Requested At*: ${new Date(request.timestamp).toLocaleString()}`)
-        .join("\n\n");
-
-    if (!userRequestStatus) {
-        bot.sendMessage(chatId, "ℹ️ You have not made any requests yet.");
-    } else {
-        bot.sendMessage(chatId, `📄 *Your Request Statuses*:\n\n${userRequestStatus}`, { parse_mode: "Markdown" });
-    }
+const ReviewSchema = new mongoose.Schema({
+  fileId: { type: mongoose.Schema.Types.ObjectId, ref: 'File', required: true },
+  userId: { type: String, required: true },
+  rating: { type: Number, required: true, min: 1, max: 5 },
+  comment: String,
+  createdAt: { type: Date, default: Date.now }
 });
 
-
-
-
-
-// report bugs videos/images/links/texts
-bot.onText(/\/report/, async (msg) => {
-  const chatId = msg.chat.id;
-
-  bot.sendMessage(chatId, 'Please send the content you want to report (text, image, video, or link).');
-
-  // Await user input for reporting content
-  bot.once('message', async (message) => {
-    const userId = message.from.id;
-    const username = message.from.username || message.from.first_name || 'Unknown User';
-
-    try {
-      let forwardMessage = `📢 **New Report**\n👤 **From:** @${username} (ID: ${userId})\n\n`;
-
-      if (message.text) {
-        // Forward text messages
-        forwardMessage += `📝 **Text:**\n${message.text}`;
-        await bot.sendMessage(privateChannelId, forwardMessage, { parse_mode: 'Markdown' });
-      } else if (message.photo || message.video) {
-        // Ask for a caption for media
-        await bot.sendMessage(chatId, 'Would you like to add a caption? If yes, please send it now, or type /skip.');
-
-        bot.once('message', async (captionMessage) => {
-          let caption = captionMessage.text !== '/skip' ? captionMessage.text : '';
-          caption = `${forwardMessage}${caption ? `\n\n📝 **Caption:** ${caption}` : ''}`;
-
-          if (message.photo) {
-            const fileId = message.photo[message.photo.length - 1].file_id; // Get the highest resolution
-            await bot.sendPhoto(privateChannelId, fileId, { caption, parse_mode: 'Markdown' });
-          } else if (message.video) {
-            const fileId = message.video.file_id;
-            await bot.sendVideo(privateChannelId, fileId, { caption, parse_mode: 'Markdown' });
-          }
-
-          // Confirm to the user
-          await bot.sendMessage(chatId, 'Thank you! Your report has been sent.');
-        });
-      } else if (message.document) {
-        const fileId = message.document.file_id;
-        await bot.sendDocument(privateChannelId, fileId, { caption: forwardMessage });
-        await bot.sendMessage(chatId, 'Thank you! Your report has been sent.');
-      } else {
-        // Handle unsupported content
-        await bot.sendMessage(chatId, 'Unsupported content type. Please send text, photos, videos, or documents.');
-      }
-    } catch (error) {
-      console.error('Error forwarding the message:', error);
-      await bot.sendMessage(chatId, 'An error occurred while processing your report. Please try again later.');
-    }
-  });
+const AffiliateSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  clicks: { type: Number, default: 0 },
+  conversions: { type: Number, default: 0 },
+  earnings: { type: Number, default: 0 },
+  affiliateCode: { type: String, unique: true },
+  createdAt: { type: Date, default: Date.now }
 });
 
+// Create models
+const Category = mongoose.model('Category', CategorySchema);
+const File = mongoose.model('File', FileSchema);
+const User = mongoose.model('User', UserSchema);
+const VersionHistory = mongoose.model('VersionHistory', VersionHistorySchema);
+const Wishlist = mongoose.model('Wishlist', WishlistSchema);
+const Review = mongoose.model('Review', ReviewSchema);
+const Affiliate = mongoose.model('Affiliate', AffiliateSchema);
 
+// ─────────────────────────────────────────────
+// BOT SETUP & UTILITIES
+// ─────────────────────────────────────────────
+const bot = new TelegramBot(TOKEN, { polling: true });
 
+// Feature menu state management
+const userStates = new Map();
 
-
-
-
-// Admin command to list all pending requests
-bot.onText(/\/showrequests$/, (msg) => {
-    const chatId = msg.chat.id;
-    if (chatId.toString() !== privateChannelId && msg.chat.type !== "private") {
-        return; // Ignore commands outside admin scope
-    }
-
-    const pendingRequests = requestLog
-        .filter(request => request.status === "pending")
-        .map(request => `🔹 *Request ID*: ${request.requestId}\n   *App Name*: ${request.appName}\n   *From*: @${request.username || "Anonymous"}\n   *Requested At*: ${new Date(request.timestamp).toLocaleString()}`)
-        .join("\n\n");
-
-    if (!pendingRequests) {
-        bot.sendMessage(chatId, "ℹ️ There are no pending requests.");
-    } else {
-        bot.sendMessage(chatId, `📄 *Pending Requests*:\n\n${pendingRequests}`, { parse_mode: "Markdown" });
-    }
-});
-
-// Handle admin approval (/done <ID>) or rejection (/undone <ID> <reason>)
-bot.onText(/\/(done|undone) (\d+)(?: (.+))?/, (msg, match) => {
-    const chatId = msg.chat.id;
-    if (chatId.toString() !== privateChannelId && msg.chat.type !== "private") {
-        return; // Ignore commands outside admin scope
-    }
-
-    const action = match[1]; // "done" or "undone"
-    const requestId = parseInt(match[2], 10);
-    const reason = match[3]?.trim();
-
-    if (action === "done") {
-        const result = handleRequestAction(requestId, "approved");
-        bot.sendMessage(chatId, result.message);
-    } else if (action === "undone") {
-        if (!reason) {
-            bot.sendMessage(chatId, "❌ Please provide a reason for rejection. Example: `/undone 1 Invalid app name`");
-            return;
-        }
-        const result = handleRequestAction(requestId, "rejected", reason);
-        bot.sendMessage(chatId, result.message);
-    }
-});
-
-
-
-
-// viewpremiumusers command to show all premium users
-bot.onText(/\/viewpremiumusers/, (msg) => {
-  const chatId = msg.chat.id;
-  const adminUsername = 'artwebtech'; // Replace with your admin username
-
-  // Check if the user is an admin
-  if (msg.chat.username === adminUsername) {
-    if (premiumUsers.length === 0) {
-      bot.sendMessage(chatId, 'No premium users found.');
-      return;
-    }
-
-    // Construct a list of premium users
-    const premiumUserDetails = premiumUsers
-      .map((userId) => {
-        const user = normalUsers[userId]; // Fetch user details from normalUsers
-        const username = user?.username || 'N/A';
-        const fullName = user?.fullName || 'Unknown User';
-        const joinedDate = user?.premiumJoinedDate || 'Date not available';
-        return `- **Name:** ${fullName}\n  **Username:** @${username}\n  **User ID:** ${userId}\n  **Premium Joined Date:** ${joinedDate}`;
-      })
-      .join('\n\n');
-
-    bot.sendMessage(
-      chatId,
-      `Here are the premium users:\n\n${premiumUserDetails}`,
-      { parse_mode: 'Markdown' }
-    );
-  } else {
-    bot.sendMessage(chatId, 'You do not have permission to view premium user details.');
-  }
-});
-
-
-// Admin view of normal users
-bot.onText(/\/viewusers/, (msg) => {
-    const chatId = msg.chat.id;
-    const adminUsername = 'artwebtech'; // Replace with the admin's Telegram username
-
-    if (msg.chat.username === adminUsername) {
-      // Admin view: List users with links to profiles, usernames, and user IDs
-      const userList = Object.entries(normalUsers)
-        .map(
-          ([id, user]) =>
-            `- [${user.fullName}](tg://user?id=${id}) (@${user.username || 'N/A'})\n  **User ID:** ${id}`
-        )
-        .join('\n\n');
-
-      if (userList) {
-        bot.sendMessage(
-          chatId,
-          `Here is the list of normal users:\n\n${userList}`,
-          { parse_mode: 'Markdown' }
-        );
-      } else {
-        bot.sendMessage(chatId, 'No normal users found.');
-      }
-    } else {
-      bot.sendMessage(chatId, 'You do not have permission to view this information.');
-    }
-  });
-
-
-// Command to request UPI payment/premiumpay
-bot.onText(/\/upgrade/, (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-
-  if (premiumUsers.includes(userId)) {
-    bot.sendMessage(chatId, 'You are already a premium member! Enjoy the premium features!');
-  } else {
-    const paymentButton = {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: 'Pay 10 Rupees', callback_data: 'payment' }],
-        ],
-      },
-    };
-    bot.sendMessage(chatId, 'To upgrade to premium, please send 10 rupees to 9072428800@fam UPI.', paymentButton);
-  }
-});
-
-bot.on('callback_query', (callbackQuery) => {
-  const msg = callbackQuery.message;
-  if (callbackQuery.data === 'joined') {
-    bot.sendMessage(
-      msg.chat.id,
-      'Thank you for joining the channels! You can now use /get <filename> to request files.'
-    );
-  } else if (callbackQuery.data === 'payment') {
-    const qrCodeImagePath = './qr_code.jpg';
-
-    // Check if the QR code image exists
-    if (fs.existsSync(qrCodeImagePath)) {
-      bot.sendPhoto(msg.chat.id, qrCodeImagePath, {
-        caption: 'Scan this QR code to make the payment.',
-      });
-    } else {
-      bot.sendMessage(
-        msg.chat.id,
-        'QR code not available. Please contact the admin for assistance.'
-      );
-    }
-  }
-});
-
-// Broadcast message to normal users only
-bot.onText(/\/broadcast (.+)/, (msg, match) => {
-  const chatId = msg.chat.id;
-  const adminUsername = 'artwebtech'; // Replace with the admin's Telegram username
-  const broadcastMessage = match[1];
-
-  if (msg.chat.username === adminUsername) {
-    // Filter normal users only
-    const normalUserIds = Object.keys(normalUsers).filter(
-      (userId) => !premiumUsers.includes(parseInt(userId))
-    );
-
-    if (normalUserIds.length === 0) {
-      bot.sendMessage(chatId, 'No normal users found to broadcast the message.');
-      return;
-    }
-
-    bot.sendMessage(chatId, `Broadcasting message to ${normalUserIds.length} normal users...`);
-
-    normalUserIds.forEach((userId) => {
-      bot.sendMessage(userId, `Broadcast Message from Admin:\n\n${broadcastMessage}`).catch((error) => {
-        console.error(`Failed to send message to user ${userId}:`, error.message);
-      });
-    });
-
-    bot.sendMessage(chatId, 'Broadcast completed successfully.');
-  } else {
-    bot.sendMessage(chatId, 'You do not have permission to use this command.');
-  }
-});
-
-
-// Function to broadcast messages to all users
-const broadcastMessage = (message) => {
-  // Read the users list from users.json
-  fs.readFile('users.json', 'utf8', (err, data) => {
-    if (err) {
-      console.error('Error reading users list:', err.message);
-      return;
-    }
-
-    let users;
-    try {
-      users = JSON.parse(data).users || [];
-    } catch (parseErr) {
-      console.error('Error parsing users list:', parseErr.message);
-      return;
-    }
-
-    // Send message to each user
-    users.forEach((userId) => {
-      bot.sendMessage(userId, message).catch((error) => {
-        console.error(`Failed to send message to user ${userId}:`, error.message);
-      });
-    });
-  });
+// Utility functions
+const formatBytes = (bytes) => {
+  if (bytes === 0) return '0 B';
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
-    // Bot message handler
- // Listen for messages
-  bot.on('message', (msg) => {
-      const chatId = msg.chat.id;
-      const userId = msg.from.id;
-      const username = msg.from.username || "Unknown";
-      const fullName = `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
-      const isAdmin = msg.from.username === ADMIN_USERNAME;
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-      // Handle /start command and add users to users.json and normalUsers.json
-      if (msg.text === '/start') {
-          // Update users.json
-          fs.readFile('users.json', 'utf8', (err, data) => {
-              let users = [];
-              if (!err) {
-                  try {
-                      users = JSON.parse(data).users || [];
-                  } catch (parseErr) {
-                      console.error('Error parsing users.json:', parseErr.message);
-                  }
-              }
+const isAdmin = (user) => {
+  return user.username === ADMIN_USERNAME || ADMIN_IDS.includes(user.id.toString());
+};
 
-              if (!users.includes(userId)) {
-                  users.push(userId);
+const generateReferralCode = () => {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+};
 
-                  fs.writeFile('users.json', JSON.stringify({ users }, null, 2), (writeErr) => {
-                      if (writeErr) {
-                          console.error('Error saving users.json:', writeErr.message);
-                      } else {
-                          console.log(`Added new user ID: ${userId}`);
+// ─────────────────────────────────────────────
+// DYNAMIC FEATURE MENUS
+// ─────────────────────────────────────────────
+const createFeatureMenu = (userId, currentFeature = null) => {
+  const features = [
+    { id: 'categorization', name: '🏷️ Smart Categorization', enabled: FEATURES.CATEGORIZATION },
+    { id: 'version_management', name: '🔄 Version Management', enabled: FEATURES.VERSION_MANAGEMENT },
+    { id: 'advanced_search', name: '🔍 Advanced Search', enabled: FEATURES.ADVANCED_SEARCH },
+    { id: 'update_notifications', name: '🔔 Update Notifications', enabled: FEATURES.UPDATE_NOTIFICATIONS },
+    { id: 'wishlist', name: '🎯 Wishlist Feature', enabled: FEATURES.WISHLIST },
+    { id: 'file_verification', name: '🛡️ File Verification', enabled: FEATURES.FILE_VERIFICATION },
+    { id: 'admin_controls', name: '⚙️ Admin Controls', enabled: FEATURES.ADMIN_CONTROLS },
+    { id: 'dashboard_reports', name: '📊 Dashboard & Reports', enabled: FEATURES.DASHBOARD_REPORTS },
+    { id: 'user_profiles', name: '👤 User Profiles', enabled: FEATURES.USER_PROFILES },
+    { id: 'auto_fetch', name: '🤖 Auto-Fetch Sources', enabled: FEATURES.AUTO_FETCH },
+    { id: 'sharing_referrals', name: '📤 Sharing & Referrals', enabled: FEATURES.SHARING_REFERRALS },
+    { id: 'batch_operations', name: '⚡ Batch Operations', enabled: FEATURES.BATCH_OPERATIONS },
+    { id: 'file_relationships', name: '🔗 File Relationships', enabled: FEATURES.FILE_RELATIONSHIPS },
+    { id: 'interactive_tutorial', name: '🎓 Interactive Tutorial', enabled: FEATURES.INTERACTIVE_TUTORIAL },
+    { id: 'customizable_interface', name: '🎨 Customizable Interface', enabled: FEATURES.CUSTOMIZABLE_INTERFACE },
+    { id: 'multi_language', name: '🌐 Multi-Language', enabled: FEATURES.MULTI_LANGUAGE },
+    { id: 'points_rewards', name: '🏆 Points & Rewards', enabled: FEATURES.POINTS_REWARDS },
+    { id: 'premium_features', name: '💎 Premium Features', enabled: FEATURES.PREMIUM_FEATURES },
+    { id: 'affiliate_system', name: '🤝 Affiliate System', enabled: FEATURES.AFFILIATE_SYSTEM },
+    { id: 'smart_recommendations', name: '🧠 Smart Recommendations', enabled: FEATURES.SMART_RECOMMENDATIONS },
+    { id: 'auto_tagging', name: '🏷️ Auto-Tagging', enabled: FEATURES.AUTO_TAGGING },
+    { id: 'advanced_search_engine', name: '🔎 Advanced Search Engine', enabled: FEATURES.ADVANCED_SEARCH_ENGINE },
+    { id: 'community_features', name: '👥 Community Features', enabled: FEATURES.COMMUNITY_FEATURES }
+  ];
 
-                          bot.sendDocument(privateChannelId, 'users.json', {
-                              caption: `Updated users.json file:\nNew user added: ${userId}`,
-                          }).catch((error) => {
-                              console.error('Error sending updated users.json to private channel:', error.message);
-                          });
-                      }
-                  });
-              }
-          });
-
-          // Update normalUsers.json
-          fs.readFile('normalUsers.json', 'utf8', (err, data) => {
-              let normalUsers = {};
-              if (!err) {
-                  try {
-                      normalUsers = JSON.parse(data);
-                  } catch (parseErr) {
-                      console.error('Error parsing normalUsers.json:', parseErr.message);
-                  }
-              }
-
-              if (!normalUsers[userId]) {
-                  normalUsers[userId] = {
-                      username,
-                      fullName,
-                      joinedDate: new Date().toISOString(),
-                  };
-
-                  fs.writeFile('normalUsers.json', JSON.stringify(normalUsers, null, 2), (writeErr) => {
-                      if (writeErr) {
-                          console.error('Error saving normalUsers.json:', writeErr.message);
-                      } else {
-                          console.log(`Added new user details for ID: ${userId}`);
-
-                          bot.sendDocument(privateChannelId, 'normalUsers.json', {
-                              caption: `Updated normalUsers.json file:\nNew user added: ${username || "Unknown"} (ID: ${userId})`,
-                          }).catch((error) => {
-                              console.error('Error sending updated normalUsers.json to private channel:', error.message);
-                          });
-                      }
-                  });
-              }
-          });
-      }
- 
-    
-      // Other existing bot functionality (e.g., /data, handling documents, etc.)
-      if (msg.text === '/data' && isAdmin) {
-        const filesToSend = ['fileDatabase.json', 'normalUsers.json', 'premiumUsers.json','users.json', 'requests.json'];
-
-        filesToSend.forEach((file) => {
-          if (fs.existsSync(file)) {
-            bot.sendDocument(chatId, file, {
-              caption: `Here is the latest ${file}`,
-            }).catch((error) => {
-              console.error(`Error sending file ${file}:`, error.message);
-              bot.sendMessage(chatId, `Failed to send ${file}. Please try again later.`);
-            });
-          } else {
-            bot.sendMessage(chatId, `File ${file} not found.`);
-          }
-        });
-      } else if (msg.text === '/data') {
-        bot.sendMessage(chatId, 'You do not have permission to use this command.');
-      }
-   
-
-  // Handle /totalusers admin command
-      if (msg.text === '/totalusers' && isAdmin) {
-          fs.readFile('users.json', 'utf8', (err, data) => {
-              if (err) {
-                  console.error('Error reading users.json:', err.message);
-                  bot.sendMessage(chatId, '❌ Could not read users.json. Please try again later.');
-                  return;
-              }
-
-              let users = [];
-              try {
-                  users = JSON.parse(data).users || [];
-              } catch (parseErr) {
-                  console.error('Error parsing users.json:', parseErr.message);
-                  bot.sendMessage(chatId, '❌ Error parsing users.json. Please check the file format.');
-                  return;
-              }
-
-              bot.sendMessage(chatId, `📊 Total registered users: ${users.length}`);
-          });
-      }
+  const enabledFeatures = features.filter(f => f.enabled);
   
-
-  // Handle document uploads
-  // Existing functionality (file handling, messages, etc.)
-  if (msg.document) {
-    const fileId = msg.document.file_id;
-    let appName = msg.document.file_name || 'unknown';
-
-    // Normalize appName
-    const processedAppName = appName
-      .toLowerCase()
-      .split('_')[0] // Ignore everything after the first underscore
-      .replace(/\.[^/.]+$/, ''); // Remove the file extension
-
-    if (isAdmin) {
-      // Load the file database
-      fs.readFile('fileDatabase.json', 'utf8', (err, data) => {
-        if (err) {
-          bot.sendMessage(chatId, 'Error reading the file database.');
-          console.error(err);
-          return;
-        }
-
-        let fileDatabase;
-        try {
-          fileDatabase = JSON.parse(data);
-        } catch (parseErr) {
-          bot.sendMessage(chatId, 'Error parsing the file database.');
-          console.error(parseErr);
-          return;
-        }
-
-        // Get the current date
-        const addedDate = new Date().toISOString().split('T')[0];
-        const newFileEntry = {
-          appName: processedAppName,
-          fileId,
-          addedDate, // Always use the current date dynamically
-        };
-
-        // Check if the appName already exists in the database
-        const existingIndex = fileDatabase.files.findIndex(
-          (file) => file.appName === processedAppName
-        );
-
-        if (existingIndex !== -1) {
-          // Preserve the existing id and update the rest
-          const existingId = fileDatabase.files[existingIndex].id;
-          fileDatabase.files[existingIndex] = {
-            ...newFileEntry,
-            id: existingId, // Retain the existing id
-          };
-          bot.sendMessage(chatId, `Updated file entry for app: ${processedAppName}`);
-        } else {
-          // Assign a new id for the new entry
-          const newId = fileDatabase.files.length
-            ? Math.max(...fileDatabase.files.map((file) => file.id || 0)) + 1
-            : 1;
-          fileDatabase.files.push({
-            id: newId,
-            ...newFileEntry,
-          });
-          bot.sendMessage(chatId, `Added new file entry for app: ${processedAppName}`);
-        }
-
-        // Save the updated file database
-        try {
-          fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
-          console.log(`File database updated: ${processedAppName} => ${fileId}`);
-          bot.sendMessage(chatId, `File database updated successfully!`);
-
-          // Send updated database to the admin group
-          bot.sendDocument(privateChannelId, 'fileDatabase.json', {
-            caption: `Updated fileDatabase.json file:\nLast file added/updated: "${processedAppName}"`,
-          });
-        } catch (error) {
-          console.error('Error saving file database:', error.message);
-          bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
-        }
-      });
-
-    } else {
-      // Forward non-admin files to the admin group
-      bot.sendMessage(
-        privateChannelId, 
-        `Document received from:
-        - **Name:** ${fullName}
-        - **Username:** ${username}
-        - **User ID:** ${userId}
-
-        [View Profile](tg://user?id=${userId})`,
-        { parse_mode: 'Markdown' }
-      );
-
-      bot.forwardMessage(privateChannelId, chatId, msg.message_id).catch((error) => {
-        console.error('Error forwarding document:', error.message);
-      });
-
-      bot.sendMessage(chatId, 'Payment screenshot received. An admin will verify your payment shortly.');
-    }
-  } else if (msg.photo || msg.video) {
-    const fileId = msg.photo
-      ? msg.photo[msg.photo.length - 1].file_id
-      : msg.video.file_id;
-    console.log(msg.photo ? 'Photo File ID:' : 'Video File ID:', fileId);
-
-    if (isAdmin) {
-      bot.sendMessage(chatId, `Here is the file ID in JSON format:\n\n"${msg.photo ? 'photo' : 'video'}": "${fileId}"`);
-    } else {
-      bot.sendMessage(
-        privateChannelId, 
-        `${msg.photo ? 'Photo' : 'Video'} received from:
-        - **Name:** ${fullName}
-        - **Username:** ${username}
-        - **User ID:** ${userId}
-
-        [View Profile](tg://user?id=${userId})`,
-        { parse_mode: 'Markdown' }
-      );
-
-      bot.forwardMessage(privateChannelId, chatId, msg.message_id).catch((error) => {
-        console.error('Error forwarding message:', error.message);
-      });
-
-      bot.sendMessage(chatId, `${msg.photo ? 'Photo' : 'Video'} received and forwarded to admins. An admin will verify shortly.`);
-    }
-  } else {
-    console.log('No relevant file detected.');
+  // If a feature is selected, show only that feature's options
+  if (currentFeature) {
+    return createFeatureSubMenu(currentFeature, userId);
   }
-});
 
+  // Create main feature grid (4 columns)
+  const keyboard = [];
+  for (let i = 0; i < enabledFeatures.length; i += 4) {
+    const row = enabledFeatures.slice(i, i + 4).map(feature => ({
+      text: feature.name,
+      callback_data: `feature_${feature.id}`
+    }));
+    keyboard.push(row);
+  }
 
-// Verify function for admins
-bot.onText(/\/verify (\d+)/, (msg, match) => {
-  const chatId = msg.chat.id;
-  const userIdToVerify = parseInt(match[1]);
+  // Add navigation
+  keyboard.push([{ text: '🏠 Main Menu', callback_data: 'main_menu' }]);
 
-  if (msg.chat.username === ADMIN_USERNAME) {
-    if (premiumUsers.includes(userIdToVerify)) {
-      bot.sendMessage(chatId, `User ${userIdToVerify} is already a premium member.`);
-      bot.sendMessage(userIdToVerify, 'You are already a premium member! Enjoy the premium features!');
-    } else if (normalUsers[userIdToVerify]) {
-      const userDetails = normalUsers[userIdToVerify];
-      userDetails.premiumJoinedDate = new Date().toISOString();
+  return {
+    reply_markup: {
+      inline_keyboard: keyboard
+    }
+  };
+};
 
-      // Add user to premiumUsers.json
-      let premiumUserDetails = {};
-      try {
-        premiumUserDetails = JSON.parse(fs.readFileSync('premiumUsers.json', 'utf-8'));
-      } catch (error) {
-        console.log('No existing premiumUsers.json found. Creating a new one.');
+const createFeatureSubMenu = (featureId, userId) => {
+  const user = userStates.get(userId);
+  const subMenus = {
+    categorization: [
+      [{ text: '📁 Browse Categories', callback_data: 'cat_browse' }],
+      [{ text: '🏷️ Manage Tags', callback_data: 'cat_tags' }],
+      [{ text: '🔍 Search by Category', callback_data: 'cat_search' }],
+      [{ text: '⬅️ Back to Features', callback_data: 'features_back' }]
+    ],
+    version_management: [
+      [{ text: '📋 Version History', callback_data: 'vm_history' }],
+      [{ text: '🔄 Rollback Version', callback_data: 'vm_rollback' }],
+      [{ text: '📊 Compare Versions', callback_data: 'vm_compare' }],
+      [{ text: '⬅️ Back to Features', callback_data: 'features_back' }]
+    ],
+    advanced_search: [
+      [{ text: '🔍 Advanced Search', callback_data: 'search_advanced' }],
+      [{ text: '📊 Search Filters', callback_data: 'search_filters' }],
+      [{ text: '💾 Save Search', callback_data: 'search_save' }],
+      [{ text: '⬅️ Back to Features', callback_data: 'features_back' }]
+    ],
+    // Add more submenus for other features...
+    admin_controls: [
+      [{ text: '📊 System Stats', callback_data: 'admin_stats' }],
+      [{ text: '👥 User Management', callback_data: 'admin_users' }],
+      [{ text: '🗃️ File Management', callback_data: 'admin_files' }],
+      [{ text: '⚙️ System Settings', callback_data: 'admin_settings' }],
+      [{ text: '⬅️ Back to Features', callback_data: 'features_back' }]
+    ],
+    user_profiles: [
+      [{ text: '👤 My Profile', callback_data: 'profile_view' }],
+      [{ text: '📊 My Stats', callback_data: 'profile_stats' }],
+      [{ text: '🏆 Achievements', callback_data: 'profile_achievements' }],
+      [{ text: '⭐ My Reviews', callback_data: 'profile_reviews' }],
+      [{ text: '⬅️ Back to Features', callback_data: 'features_back' }]
+    ]
+    // Continue for all features...
+  };
+
+  return {
+    reply_markup: {
+      inline_keyboard: subMenus[featureId] || [[{ text: '⬅️ Back to Features', callback_data: 'features_back' }]]
+    }
+  };
+};
+
+// ─────────────────────────────────────────────
+// COMMAND HANDLERS
+// ─────────────────────────────────────────────
+
+// Enhanced /start command with feature menu
+bot.onText(/\/start/, async (msg) => {
+  const { id, username, first_name, last_name } = msg.from;
+  const fullName = `${first_name || ''} ${last_name || ''}`.trim();
+
+  try {
+    let user = await User.findOne({ userId: id.toString() });
+    if (!user) {
+      const referralCode = generateReferralCode();
+      user = new User({
+        userId: id.toString(),
+        username,
+        fullName,
+        referralCode
+      });
+      await user.save();
+    }
+
+    user.lastActive = new Date();
+    await user.save();
+
+    const welcomeMessage = `👋 Welcome *${fullName || 'User'}*!\n\n🚀 *Discover Amazing Features*:\n\nTap the button below to explore all available features!`;
+
+    bot.sendMessage(id, welcomeMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🚀 Explore Features', callback_data: 'show_features' }],
+          [{ text: '📦 Quick Download', switch_inline_query_current_chat: '' }],
+          [{ text: '👤 My Profile', callback_data: 'profile_view' }]
+        ]
       }
-      premiumUserDetails[userIdToVerify] = userDetails;
-      fs.writeFileSync('premiumUsers.json', JSON.stringify(premiumUserDetails, null, 2));
+    });
 
-      // Remove user from normalUsers.json
-      delete normalUsers[userIdToVerify];
-      fs.writeFileSync('normalUsers.json', JSON.stringify(normalUsers, null, 2));
-
-      // Add user to the in-memory premiumUsers list
-      premiumUsers.push(userIdToVerify);
-
-      bot.sendMessage(userIdToVerify, 'Congrats, you are now a premium member!');
-      bot.sendMessage(chatId, `User ${userIdToVerify} has been successfully verified as a premium member.`);
-    } else {
-      bot.sendMessage(chatId, `User ${userIdToVerify} is not found in normal users.`);
-    }
-  } else {
-    bot.sendMessage(chatId, 'You do not have permission to verify users.');
+  } catch (error) {
+    console.error('Error in /start:', error);
+    bot.sendMessage(id, '❌ An error occurred. Please try again.');
   }
 });
 
-// Command to remove a premium user
-bot.onText(/\/removepremium (\d+)/, (msg, match) => {
+// Features command
+bot.onText(/\/features/, async (msg) => {
   const chatId = msg.chat.id;
-  const userIdToRemove = parseInt(match[1]);
-
-  if (msg.chat.username === ADMIN_USERNAME) {
-    let premiumUserDetails = {};
-    try {
-      premiumUserDetails = JSON.parse(fs.readFileSync('premiumUsers.json', 'utf-8'));
-    } catch (error) {
-      bot.sendMessage(chatId, 'No premium users found.');
-      return;
-    }
-
-    if (premiumUserDetails[userIdToRemove]) {
-      delete premiumUserDetails[userIdToRemove];
-      fs.writeFileSync('premiumUsers.json', JSON.stringify(premiumUserDetails, null, 2));
-      premiumUsers = premiumUsers.filter((id) => id !== userIdToRemove);
-
-      bot.sendMessage(chatId, `User ${userIdToRemove} has been removed from premium users.If you think we made a mistake, please contact @artwebtech for a refund/review `);
-      bot.sendMessage(userIdToRemove, 'You have been removed from premium membership.');
-    } else {
-      bot.sendMessage(chatId, `User ${userIdToRemove} is not a premium member.`);
-    }
-  } else {
-    bot.sendMessage(chatId, 'You do not have permission to remove premium users.');
-  }
+  showFeaturesMenu(chatId);
 });
 
-// Ensure updated lists
-try {
-  premiumUsers = Object.keys(JSON.parse(fs.readFileSync('premiumUsers.json', 'utf-8')));
-} catch (error) {
-  console.log('No premiumUsers.json found, starting fresh.');
-}
+// ─────────────────────────────────────────────
+// FEATURE MENU DISPLAY
+// ─────────────────────────────────────────────
+const showFeaturesMenu = (chatId, messageId = null) => {
+  const menu = createFeatureMenu(chatId);
+  const message = `🚀 *Available Features*\n\n${FEATURES.selectFeature}`;
 
+  if (messageId) {
+    bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: 'Markdown',
+      reply_markup: menu.reply_markup
+    });
+  } else {
+    bot.sendMessage(chatId, message, {
+      parse_mode: 'Markdown',
+      reply_markup: menu.reply_markup
+    });
+  }
+};
 
-// Command to remove a file from fileDatabase
-bot.onText(/\/remove (.+)/, (msg, match) => {
-  const chatId = msg.chat.id;
-  const fileName = match[1].trim().toLowerCase(); // File name to remove
+// ─────────────────────────────────────────────
+// CALLBACK QUERY HANDLER (Dynamic Feature System)
+// ─────────────────────────────────────────────
+bot.on('callback_query', async (query) => {
+  const chatId = query.message.chat.id;
+  const userId = query.from.id.toString();
+  const data = query.data;
 
-  if (msg.chat.username === ADMIN_USERNAME) {
-    if (fileDatabase[fileName]) {
-      // Remove the file from the database
-      delete fileDatabase[fileName];
+  try {
+    await bot.answerCallbackQuery(query.id);
 
-      // Save the updated file database to the JSON file
-      try {
-        fs.writeFileSync('fileDatabase.json', JSON.stringify(fileDatabase, null, 2));
-        bot.sendMessage(chatId, `File "${fileName}" has been successfully removed from the database.`);
-        bot.sendDocument(privateChannelId,  'fileDatabase.json', {
-          caption: 'Updated fileDatabase.json after removal.',
-        });
-      } catch (error) {
-        console.error('Error saving fileDatabase.json:', error.message);
-        bot.sendMessage(chatId, 'Failed to update the file database. Please try again.');
+    // Feature selection handler
+    if (data.startsWith('feature_')) {
+      const featureId = data.replace('feature_', '');
+      userStates.set(userId, { currentFeature: featureId });
+      
+      const featureMessages = {
+        categorization: `🏷️ *Smart Categorization*\n\nOrganize files with categories and tags for better discovery.`,
+        version_management: `🔄 *Version Management*\n\nKeep multiple versions and manage app updates.`,
+        advanced_search: `🔍 *Advanced Search*\n\nPowerful search with filters and saved searches.`,
+        admin_controls: `⚙️ *Admin Controls*\n\nComplete system management and moderation tools.`,
+        user_profiles: `👤 *User Profiles*\n\nComprehensive user profiles with stats and achievements.`,
+        // Add more feature descriptions...
+      };
+
+      const message = featureMessages[featureId] || `Exploring ${featureId.replace('_', ' ')}...`;
+      const menu = createFeatureMenu(userId, featureId);
+
+      await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        parse_mode: 'Markdown',
+        reply_markup: menu.reply_markup
+      });
+    }
+
+    // Sub-feature handlers
+    else if (data === 'features_back') {
+      userStates.delete(userId);
+      showFeaturesMenu(chatId, query.message.message_id);
+    }
+
+    else if (data === 'show_features') {
+      showFeaturesMenu(chatId, query.message.message_id);
+    }
+
+    else if (data === 'main_menu') {
+      userStates.delete(userId);
+      bot.deleteMessage(chatId, query.message.message_id);
+      bot.emitText('/start', query.message);
+    }
+
+    // Categorization features
+    else if (data === 'cat_browse') {
+      await handleCategoryBrowse(chatId, query.message.message_id);
+    }
+
+    // Version Management features
+    else if (data === 'vm_history') {
+      await handleVersionHistory(chatId, query.message.message_id);
+    }
+
+    // User Profile features
+    else if (data === 'profile_view') {
+      await handleProfileView(chatId, userId, query.message.message_id);
+    }
+
+    // Admin features
+    else if (data.startsWith('admin_')) {
+      if (!isAdmin(query.from)) {
+        await bot.answerCallbackQuery(query.id, { text: '❌ Admin access required' });
+        return;
       }
-    } else {
-      bot.sendMessage(chatId, `File "${fileName}" was not found in the database.`);
+      await handleAdminFeature(data, chatId, query.message.message_id);
     }
-  } else {
-    bot.sendMessage(chatId, 'You do not have permission to use this command.');
+
+  } catch (error) {
+    console.error('Error in callback query:', error);
+    await bot.answerCallbackQuery(query.id, { text: '❌ An error occurred' });
   }
 });
+
+// ─────────────────────────────────────────────
+// FEATURE IMPLEMENTATION HANDLERS
+// ─────────────────────────────────────────────
+
+// Smart Categorization
+const handleCategoryBrowse = async (chatId, messageId) => {
+  const categories = await Category.find().limit(10);
+  let message = `📁 *Categories*\n\n`;
+  
+  if (categories.length === 0) {
+    message += "No categories available yet.";
+  } else {
+    categories.forEach((cat, index) => {
+      message += `${index + 1}. ${cat.icon || '📂'} ${cat.name}\n`;
+      if (cat.description) message += `   ${cat.description}\n`;
+    });
+  }
+
+  const keyboard = [
+    [{ text: '🔍 Browse Files by Category', callback_data: 'cat_browse_files' }],
+    [{ text: '⬅️ Back', callback_data: 'feature_categorization' }]
+  ];
+
+  await bot.editMessageText(message, {
+    chat_id: chatId,
+    message_id: messageId,
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: keyboard }
+  });
+};
+
+// Version Management
+const handleVersionHistory = async (chatId, messageId) => {
+  const files = await File.find({ isLatest: true }).limit(5);
+  let message = `🔄 *Version Management*\n\nRecent apps with version history:\n\n`;
+
+  files.forEach((file, index) => {
+    message += `${index + 1}. ${file.displayName} v${file.version}\n`;
+    message += `   📥 ${file.downloadCount} downloads\n`;
+    message += `   🔗 Use: /versions ${file.appName}\n\n`;
+  });
+
+  const keyboard = [
+    [{ text: '🔄 Check for Updates', callback_data: 'vm_check_updates' }],
+    [{ text: '⬅️ Back', callback_data: 'feature_version_management' }]
+  ];
+
+  await bot.editMessageText(message, {
+    chat_id: chatId,
+    message_id: messageId,
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: keyboard }
+  });
+};
+
+// User Profiles
+const handleProfileView = async (chatId, userId, messageId) => {
+  const user = await User.findOne({ userId }).populate('favorites');
+  if (!user) return;
+
+  const message = `👤 *User Profile*\n\n` +
+    `🏷 Name: ${user.fullName || 'Not set'}\n` +
+    `📊 Level: ${user.level}\n` +
+    `⭐ Points: ${user.points}\n` +
+    `💎 Premium: ${user.isPremium ? 'Yes' : 'No'}\n` +
+    `📥 Total Downloads: ${user.totalDownloads}\n` +
+    `🏆 Achievements: ${user.achievements.length}\n` +
+    `⭐ Favorites: ${user.favorites.length}\n` +
+    `🔗 Referral Code: ${user.referralCode}`;
+
+  const keyboard = [
+    [{ text: '📊 Detailed Stats', callback_data: 'profile_stats' }],
+    [{ text: '🏆 My Achievements', callback_data: 'profile_achievements' }],
+    [{ text: '⭐ My Favorites', callback_data: 'profile_favorites' }],
+    [{ text: '🎯 My Wishlist', callback_data: 'profile_wishlist' }],
+    [{ text: '⬅️ Back', callback_data: 'feature_user_profiles' }]
+  ];
+
+  await bot.editMessageText(message, {
+    chat_id: chatId,
+    message_id: messageId,
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: keyboard }
+  });
+};
+
+// Admin Features
+const handleAdminFeature = async (feature, chatId, messageId) => {
+  switch (feature) {
+    case 'admin_stats':
+      const totalFiles = await File.countDocuments();
+      const totalUsers = await User.countDocuments();
+      const totalDownloads = await Download.countDocuments();
+      
+      const message = `📊 *Admin Statistics*\n\n` +
+        `📦 Total Files: ${totalFiles}\n` +
+        `👥 Total Users: ${totalUsers}\n` +
+        `📥 Total Downloads: ${totalDownloads}\n` +
+        `💾 Storage Used: Calculating...\n` +
+        `🆕 New Today: 0`;
+      
+      await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown'
+      });
+      break;
+
+    case 'admin_users':
+      // User management implementation
+      break;
+  }
+};
+
+// ─────────────────────────────────────────────
+// NEW COMMAND IMPLEMENTATIONS
+// ─────────────────────────────────────────────
+
+// Version management command
+bot.onText(/\/versions (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const appName = match[1].trim().toLowerCase();
+
+  const files = await File.find({ 
+    appName: new RegExp(appName, 'i') 
+  }).sort({ version: -1 });
+
+  if (files.length === 0) {
+    return bot.sendMessage(chatId, `❌ No versions found for "${appName}"`);
+  }
+
+  let message = `🔄 *Version History: ${files[0].displayName}*\n\n`;
+  files.forEach((file, index) => {
+    const isLatest = index === 0 ? ' 🆕' : '';
+    message += `${index + 1}. v${file.version}${isLatest}\n`;
+    message += `   📅 ${file.addedDate.toDateString()}\n`;
+    message += `   💾 ${formatBytes(file.fileSize)}\n`;
+    message += `   📥 ${file.downloadCount} downloads\n\n`;
+  });
+
+  const keyboard = files.slice(0, 5).map(file => [
+    { 
+      text: `Download v${file.version}`, 
+      callback_data: `download_version_${file._id}` 
+    }
+  ]);
+
+  keyboard.push([{ text: '⬅️ Back to Features', callback_data: 'feature_version_management' }]);
+
+  bot.sendMessage(chatId, message, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: keyboard }
+  });
+});
+
+// Wishlist command
+bot.onText(/\/wishlist(?:\s+(.+))?/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
+
+  if (match[1]) {
+    // Add to wishlist
+    const appName = match[1].trim();
+    await handleAddToWishlist(chatId, userId, appName);
+  } else {
+    // Show wishlist
+    await handleShowWishlist(chatId, userId);
+  }
+});
+
+const handleAddToWishlist = async (chatId, userId, appName) => {
+  let wishlistItem = await Wishlist.findOne({ appName: appName.toLowerCase() });
+  
+  if (wishlistItem) {
+    if (!wishlistItem.voters.includes(userId)) {
+      wishlistItem.voters.push(userId);
+      wishlistItem.requestCount += 1;
+      await wishlistItem.save();
+    }
+  } else {
+    wishlistItem = new Wishlist({
+      appName: appName.toLowerCase(),
+      requestedBy: userId,
+      voters: [userId]
+    });
+    await wishlistItem.save();
+  }
+
+  const message = `🎯 *Added to Wishlist*\n\n"${appName}" has been added to the wishlist!\n\nTotal requests: ${wishlistItem.requestCount}`;
+
+  bot.sendMessage(chatId, message, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '📋 View Wishlist', callback_data: 'feature_wishlist' }],
+        [{ text: '🚀 Browse Features', callback_data: 'show_features' }]
+      ]
+    }
+  });
+};
+
+// ─────────────────────────────────────────────
+// BOT INITIALIZATION
+// ─────────────────────────────────────────────
+const initializeBot = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log('✅ MongoDB Connected');
+    
+    // Create default categories
+    const defaultCategories = [
+      { name: 'Productivity', icon: '💼', description: 'Tools for work and productivity' },
+      { name: 'Social', icon: '👥', description: 'Social media and communication apps' },
+      { name: 'Games', icon: '🎮', description: 'Entertainment and gaming applications' },
+      { name: 'Tools', icon: '🛠️', description: 'Utility and system tools' },
+      { name: 'Entertainment', icon: '🎬', description: 'Media and entertainment apps' }
+    ];
+
+    for (const category of defaultCategories) {
+      await Category.findOneAndUpdate(
+        { name: category.name },
+        category,
+        { upsert: true }
+      );
+    }
+
+    console.log('🤖 Enhanced Bot is running with dynamic features...');
+    
+    // Set bot commands
+    await bot.setMyCommands([
+      { command: 'start', description: 'Start the bot' },
+      { command: 'features', description: 'Explore all features' },
+      { command: 'list', description: 'List all apps' },
+      { command: 'get', description: 'Download an app' },
+      { command: 'wishlist', description: 'Manage your wishlist' },
+      { command: 'versions', description: 'Check version history' },
+      { command: 'profile', description: 'View your profile' }
+    ]);
+
+  } catch (error) {
+    console.error('❌ Failed to initialize bot:', error);
+    process.exit(1);
+  }
+};
+
+initializeBot();
 
 // Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('Bot shutting down...');
-  bot.stopPolling();
-  process.exit(0);
+process.on('SIGINT', async () => {
+  console.log("\n🛑 Bot shutting down gracefully...");
+  try {
+    bot.stopPolling();
+    await mongoose.connection.close();
+    console.log('✅ Bot shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
 });
