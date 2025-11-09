@@ -1,16 +1,16 @@
-const TelegramBot = require('node-telegram-bot-api');
-const fs = require('fs');
-const TOKEN = '7989937085:AAF8_i_0NKvf-iuxDMx3ywAbAjS6oh9l3Sg'; // BOT_TOKEN
-const ADMIN_USERNAME = 'artwebtech'; // ADMIN_USERNAME
-const REQUIRED_CHANNEL = '@awt_bots'; // REQURIED_CHANNEL
-const adminUsers = ["1343548529",""];  // ADMINS  IDs
-const privateChannelId = -1002433715335; // PRIVATE_CHANNEL_ID
-const RATE_LIMIT = 60000; // 1-minute rate limit
-const userRequests = {}; // To track user requests for rate limiting
-const requestLog = []; // To log all requests
+//**const TelegramBot = require('node-telegram-bot-api');
+//const fs = require('fs');
+//const TOKEN = '7989937085:AAF8_i_0NKvf-iuxDMx3ywAbAjS6oh9l3Sg'; // BOT_TOKEN
+//*const ADMIN_USERNAME = 'artwebtech'; // ADMIN_USERNAME
+//*const REQUIRED_CHANNEL = '@awt_bots'; // REQURIED_CHANNEL
+//*const adminUsers = ["1343548529",""];  // ADMINS  IDs
+//*const privateChannelId = -1002433715335; // PRIVATE_CHANNEL_ID
+//*const RATE_LIMIT = 60000; // 1-minute rate limit
+//*const userRequests = {}; // To track user requests for rate limiting
+//*const requestLog = []; // To log all requests
 // Create a new bot instance
-const bot = new TelegramBot(TOKEN, { polling: true });
-
+//const bot = new TelegramBot(TOKEN, { polling: true });
+*/
 /**
  * Enhanced Telegram File Management Bot with Dynamic Features
  * Features: Smart Categorization, Version Management, Advanced Search, and more
